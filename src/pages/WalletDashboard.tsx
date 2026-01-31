@@ -1,11 +1,11 @@
 import { Link } from 'react-router-dom';
-import { Wallet, ArrowUpRight, ArrowDownLeft, History, TrendingUp, Target, Trophy } from 'lucide-react';
+import { Wallet, ArrowUpRight, ArrowDownLeft, History, TrendingUp, Target, Trophy, Download, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/contexts/WalletContext';
 import { cn } from '@/lib/utils';
 
 export default function WalletDashboard() {
-  const { wallet, connect, isConnecting } = useWallet();
+  const { wallet, connect, isConnecting, isCheCkoAvailable, installUrl, error } = useWallet();
 
   // Mock transaction history
   const transactions = [
@@ -28,6 +28,14 @@ export default function WalletDashboard() {
     profitLoss: 540,
   };
 
+  const handleConnect = () => {
+    if (!isCheCkoAvailable) {
+      window.open(installUrl, '_blank');
+    } else {
+      connect();
+    }
+  };
+
   if (!wallet.connected) {
     return (
       <div className="min-h-screen flex items-center justify-center py-8">
@@ -35,18 +43,49 @@ export default function WalletDashboard() {
           <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
             <Wallet className="h-10 w-10 text-primary" />
           </div>
-          <h1 className="font-display text-2xl font-bold mb-2">Connect Your Wallet</h1>
+          <h1 className="font-display text-2xl font-bold mb-2">
+            {isCheCkoAvailable ? 'Connect Your Wallet' : 'Install CheCko Wallet'}
+          </h1>
           <p className="text-muted-foreground mb-6">
-            Connect your Linera wallet to view your balance, betting history, and statistics.
+            {isCheCkoAvailable 
+              ? 'Connect your CheCko wallet to view your balance, betting history, and statistics on the Linera blockchain.'
+              : 'CheCko is a browser wallet for Linera blockchain. Install it to start making predictions.'
+            }
           </p>
+          
           <Button
             size="lg"
-            onClick={connect}
+            onClick={handleConnect}
             disabled={isConnecting}
             className="font-display font-bold uppercase tracking-wide bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+            {isConnecting ? (
+              'Connecting...'
+            ) : !isCheCkoAvailable ? (
+              <>
+                <Download className="mr-2 h-5 w-5" />
+                Install CheCko Wallet
+              </>
+            ) : (
+              'Connect CheCko'
+            )}
           </Button>
+          
+          {error && (
+            <p className="mt-4 text-sm text-destructive">{error}</p>
+          )}
+          
+          {!isCheCkoAvailable && (
+            <a 
+              href="https://github.com/respeer-ai/linera-wallet"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 mt-4 text-sm text-muted-foreground hover:text-primary transition-colors"
+            >
+              Learn more about CheCko
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
       </div>
     );

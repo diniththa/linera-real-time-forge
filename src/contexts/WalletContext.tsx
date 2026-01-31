@@ -1,5 +1,15 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { WalletState, UserBalance } from '@/types';
+import {
+  isCheCkoInstalled,
+  getCheCkoProvider,
+  waitForCheCko,
+  connectCheCko,
+  disconnectCheCko,
+  getCheCkoBalance,
+  CHECKO_INSTALL_URL,
+  CheCkoProvider,
+} from '@/lib/checko';
 
 interface WalletContextType {
   wallet: WalletState;
@@ -7,6 +17,8 @@ interface WalletContextType {
   disconnect: () => void;
   isConnecting: boolean;
   error: string | null;
+  isCheCkoAvailable: boolean;
+  installUrl: string;
 }
 
 const initialBalance: UserBalance = {
@@ -28,44 +40,121 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<WalletState>(initialWalletState);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isCheCkoAvailable, setIsCheCkoAvailable] = useState(false);
+
+  // Check for CheCko wallet on mount
+  useEffect(() => {
+    const checkCheCko = async () => {
+      const provider = await waitForCheCko();
+      setIsCheCkoAvailable(!!provider);
+      
+      if (provider) {
+        // Listen for account changes
+        provider.on('accountsChanged', async () => {
+          const accounts = await provider.getAccounts();
+          if (accounts.length === 0) {
+            setWallet(initialWalletState);
+          } else {
+            const account = accounts[0];
+            await updateWalletState(account.address, account.chainId, provider);
+          }
+        });
+
+        // Listen for chain changes
+        provider.on('chainChanged', async (chainId: unknown) => {
+          if (wallet.connected && wallet.address) {
+            setWallet(prev => ({ ...prev, chainId: chainId as string }));
+          }
+        });
+
+        // Listen for disconnect
+        provider.on('disconnect', () => {
+          setWallet(initialWalletState);
+        });
+      }
+    };
+
+    checkCheCko();
+  }, []);
+
+  const updateWalletState = async (address: string, chainId: string, provider: CheCkoProvider) => {
+    try {
+      const balanceData = await provider.getBalance(address);
+      const available = parseFloat(balanceData?.available || '0');
+      const locked = parseFloat(balanceData?.locked || '0');
+      
+      setWallet({
+        connected: true,
+        address,
+        chainId,
+        balance: {
+          available,
+          locked,
+          total: available + locked,
+        },
+      });
+    } catch (err) {
+      // If balance fetch fails, still connect with 0 balance
+      setWallet({
+        connected: true,
+        address,
+        chainId,
+        balance: initialBalance,
+      });
+    }
+  };
 
   const connect = useCallback(async () => {
     setIsConnecting(true);
     setError(null);
 
     try {
-      // TODO: Integrate with CheCko/Croissant wallet
-      // For now, simulate wallet connection
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Simulated connected wallet
-      const mockAddress = '0x' + Math.random().toString(16).slice(2, 10) + '...' + Math.random().toString(16).slice(2, 6);
+      const provider = getCheCkoProvider();
       
-      setWallet({
-        connected: true,
-        address: mockAddress,
-        chainId: 'linera-testnet-conway',
-        balance: {
-          available: 1000,
-          locked: 0,
-          total: 1000,
-        },
-      });
+      if (!provider) {
+        // CheCko not installed - open install page
+        setError('CheCko wallet not found. Please install the extension.');
+        window.open(CHECKO_INSTALL_URL, '_blank');
+        setIsConnecting(false);
+        return;
+      }
+
+      const account = await connectCheCko();
+      
+      if (account) {
+        await updateWalletState(account.address, account.chainId, provider);
+      } else {
+        setError('Failed to connect to CheCko wallet.');
+      }
     } catch (err) {
-      setError('Failed to connect wallet. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to connect wallet. Please try again.';
+      setError(errorMessage);
       console.error('Wallet connection error:', err);
     } finally {
       setIsConnecting(false);
     }
   }, []);
 
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback(async () => {
+    try {
+      await disconnectCheCko();
+    } catch (err) {
+      console.error('Disconnect error:', err);
+    }
     setWallet(initialWalletState);
     setError(null);
   }, []);
 
   return (
-    <WalletContext.Provider value={{ wallet, connect, disconnect, isConnecting, error }}>
+    <WalletContext.Provider value={{ 
+      wallet, 
+      connect, 
+      disconnect, 
+      isConnecting, 
+      error, 
+      isCheCkoAvailable,
+      installUrl: CHECKO_INSTALL_URL 
+    }}>
       {children}
     </WalletContext.Provider>
   );

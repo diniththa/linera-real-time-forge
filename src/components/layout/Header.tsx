@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Zap, Menu, X } from 'lucide-react';
+import { Zap, Menu, X, Download } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/contexts/WalletContext';
@@ -13,12 +13,20 @@ const navLinks = [
 ];
 
 export function Header() {
-  const { wallet, connect, disconnect, isConnecting } = useWallet();
+  const { wallet, connect, disconnect, isConnecting, isCheCkoAvailable, installUrl, error } = useWallet();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const handleConnect = () => {
+    if (!isCheCkoAvailable) {
+      window.open(installUrl, '_blank');
+    } else {
+      connect();
+    }
   };
 
   return (
@@ -76,11 +84,20 @@ export function Header() {
               </div>
             ) : (
               <Button
-                onClick={connect}
+                onClick={handleConnect}
                 disabled={isConnecting}
                 className="hidden sm:flex font-body font-bold uppercase tracking-wide bg-primary text-primary-foreground hover:bg-primary/90 glow-primary"
               >
-                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+                {isConnecting ? (
+                  'Connecting...'
+                ) : !isCheCkoAvailable ? (
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    Install CheCko
+                  </>
+                ) : (
+                  'Connect CheCko'
+                )}
               </Button>
             )}
 
@@ -128,13 +145,27 @@ export function Header() {
                 </Button>
               </div>
             ) : (
-              <Button
-                onClick={connect}
-                disabled={isConnecting}
-                className="mt-4 font-body font-bold uppercase"
-              >
-                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-              </Button>
+              <div className="flex flex-col gap-2 pt-4 border-t border-border">
+                <Button
+                  onClick={handleConnect}
+                  disabled={isConnecting}
+                  className="font-body font-bold uppercase"
+                >
+                  {isConnecting ? (
+                    'Connecting...'
+                  ) : !isCheCkoAvailable ? (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Install CheCko
+                    </>
+                  ) : (
+                    'Connect CheCko'
+                  )}
+                </Button>
+                {error && (
+                  <p className="text-xs text-destructive">{error}</p>
+                )}
+              </div>
             )}
           </nav>
         </div>
