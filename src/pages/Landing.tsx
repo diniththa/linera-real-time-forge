@@ -1,13 +1,19 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Zap, Shield, Clock, TrendingUp, Users, Trophy } from 'lucide-react';
+import { ArrowRight, Zap, Shield, Clock, TrendingUp, Users, Trophy, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/contexts/WalletContext';
 import { MatchCard } from '@/components/matches/MatchCard';
+import { useRunningMatches } from '@/hooks/useMatches';
 import { mockMatches } from '@/data/mockData';
 
 export default function Landing() {
   const { wallet, connect, isConnecting } = useWallet();
-  const liveMatches = mockMatches.filter((m) => m.status === 'live').slice(0, 3);
+  const { data: liveMatches, isLoading } = useRunningMatches();
+
+  // Use API data if available, otherwise fallback to mock
+  const displayMatches = (liveMatches && liveMatches.length > 0) 
+    ? liveMatches.slice(0, 3)
+    : mockMatches.filter((m) => m.status === 'live').slice(0, 3);
 
   return (
     <div className="min-h-screen">
@@ -20,13 +26,13 @@ export default function Landing() {
         <div className="container mx-auto px-4 relative z-10">
           <div className="max-w-4xl mx-auto text-center">
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8 animate-fade-in">
               <Zap className="h-4 w-4 text-primary" />
               <span className="text-sm font-semibold text-primary">Built on Linera - Sub-second Finality</span>
             </div>
 
             {/* Main headline */}
-            <h1 className="font-display text-4xl md:text-6xl lg:text-7xl font-black mb-6 leading-tight">
+            <h1 className="font-display text-4xl md:text-6xl lg:text-7xl font-black mb-6 leading-tight animate-fade-in">
               <span className="text-foreground">Predict</span>{' '}
               <span className="text-primary text-glow-primary">Every Play.</span>
               <br />
@@ -34,14 +40,14 @@ export default function Landing() {
               <span className="text-accent text-glow-accent">Instantly.</span>
             </h1>
 
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
+            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 animate-fade-in">
               Real-time micro-predictions on live esports matches. 
               Bet on individual plays, not just game outcomes. 
               Instant settlement powered by Linera's microchain architecture.
             </p>
 
             {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-fade-in">
               {wallet.connected ? (
                 <Button 
                   asChild 
@@ -100,6 +106,11 @@ export default function Landing() {
             <div className="flex items-center gap-3">
               <div className="h-3 w-3 rounded-full bg-destructive animate-pulse" />
               <h2 className="font-display text-2xl md:text-3xl font-bold">Live Now</h2>
+              {liveMatches && liveMatches.length > 0 && (
+                <span className="px-2 py-0.5 rounded bg-primary/20 text-primary text-xs font-semibold">
+                  Real Data
+                </span>
+              )}
             </div>
             <Button asChild variant="outline" className="font-body font-semibold">
               <Link to="/matches">
@@ -109,11 +120,25 @@ export default function Landing() {
             </Button>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {liveMatches.map((match) => (
-              <MatchCard key={match.id} match={match} />
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 text-primary animate-spin" />
+              <span className="ml-2 text-muted-foreground">Loading live matches...</span>
+            </div>
+          ) : displayMatches.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {displayMatches.map((match) => (
+                <MatchCard key={match.id} match={match} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-card border border-border rounded-xl">
+              <p className="text-muted-foreground">No live matches at the moment. Check upcoming matches!</p>
+              <Button asChild variant="outline" className="mt-4">
+                <Link to="/matches">View Upcoming</Link>
+              </Button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -132,7 +157,7 @@ export default function Landing() {
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {/* Feature 1 */}
-            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors">
+            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors hover-lift">
               <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
                 <Clock className="h-6 w-6 text-primary" />
               </div>
@@ -144,7 +169,7 @@ export default function Landing() {
             </div>
 
             {/* Feature 2 */}
-            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors">
+            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors hover-lift">
               <div className="h-12 w-12 rounded-lg bg-secondary/10 flex items-center justify-center mb-4">
                 <TrendingUp className="h-6 w-6 text-secondary" />
               </div>
@@ -156,7 +181,7 @@ export default function Landing() {
             </div>
 
             {/* Feature 3 */}
-            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors">
+            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors hover-lift">
               <div className="h-12 w-12 rounded-lg bg-accent/10 flex items-center justify-center mb-4">
                 <Shield className="h-6 w-6 text-accent" />
               </div>
@@ -168,7 +193,7 @@ export default function Landing() {
             </div>
 
             {/* Feature 4 */}
-            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors">
+            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors hover-lift">
               <div className="h-12 w-12 rounded-lg bg-success/10 flex items-center justify-center mb-4">
                 <Zap className="h-6 w-6 text-success" />
               </div>
@@ -180,7 +205,7 @@ export default function Landing() {
             </div>
 
             {/* Feature 5 */}
-            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors">
+            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors hover-lift">
               <div className="h-12 w-12 rounded-lg bg-warning/10 flex items-center justify-center mb-4">
                 <Users className="h-6 w-6 text-warning" />
               </div>
@@ -192,7 +217,7 @@ export default function Landing() {
             </div>
 
             {/* Feature 6 */}
-            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors">
+            <div className="p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors hover-lift">
               <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
                 <Trophy className="h-6 w-6 text-primary" />
               </div>

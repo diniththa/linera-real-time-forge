@@ -1,9 +1,10 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Users, TrendingUp, Clock, Trophy } from 'lucide-react';
+import { ArrowLeft, Users, TrendingUp, ExternalLink, Loader2, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BettingCard } from '@/components/betting/BettingCard';
 import { LiveIndicator } from '@/components/common/LiveIndicator';
-import { mockMatches, mockMarkets, gameLogos, gameNames } from '@/data/mockData';
+import { useMatch } from '@/hooks/useMatches';
+import { mockMarkets, gameLogos, gameNames } from '@/data/mockData';
 import { useWallet } from '@/contexts/WalletContext';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -11,15 +12,28 @@ import { cn } from '@/lib/utils';
 export default function LiveMatch() {
   const { matchId } = useParams();
   const { wallet, connect } = useWallet();
+  const { data: match, isLoading, isError } = useMatch(matchId || '');
   
-  const match = mockMatches.find((m) => m.id === matchId);
-  const markets = mockMarkets.filter((m) => m.matchId === matchId);
+  // For now, use mock markets (in production, these would come from the Linera contract)
+  const markets = mockMarkets.filter((m) => m.matchId === 'match-1'); // Use demo markets
 
-  if (!match) {
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+        <span className="ml-3 text-muted-foreground">Loading match...</span>
+      </div>
+    );
+  }
+
+  if (isError || !match) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h1 className="font-display text-2xl font-bold mb-4">Match not found</h1>
+          <p className="text-muted-foreground mb-4">
+            This match may have ended or the ID is invalid.
+          </p>
           <Button asChild variant="outline">
             <Link to="/matches">
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -72,13 +86,28 @@ export default function LiveMatch() {
                 <p className="font-semibold">{match.tournament}</p>
               </div>
             </div>
-            {isLive && <LiveIndicator size="lg" />}
+            <div className="flex items-center gap-3">
+              {isLive && <LiveIndicator size="lg" />}
+              {match.id.startsWith('ps-') && (
+                <span className="px-2 py-1 rounded bg-primary/20 text-primary text-xs font-semibold">
+                  Real Data
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Score Display */}
+          {/* Team Logos */}
           <div className="flex items-center justify-center gap-8 md:gap-16 py-8">
             {/* Team A */}
             <div className="flex-1 text-center">
+              {match.teamA.logo && (
+                <img 
+                  src={match.teamA.logo} 
+                  alt={match.teamA.name}
+                  className="h-16 w-16 mx-auto mb-3 object-contain"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              )}
               <h2 className="font-display text-2xl md:text-3xl font-bold mb-2">
                 {match.teamA.name}
               </h2>
@@ -115,6 +144,14 @@ export default function LiveMatch() {
 
             {/* Team B */}
             <div className="flex-1 text-center">
+              {match.teamB.logo && (
+                <img 
+                  src={match.teamB.logo} 
+                  alt={match.teamB.name}
+                  className="h-16 w-16 mx-auto mb-3 object-contain"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              )}
               <h2 className="font-display text-2xl md:text-3xl font-bold mb-2">
                 {match.teamB.name}
               </h2>
@@ -191,9 +228,9 @@ export default function LiveMatch() {
           <h3 className="font-display text-lg font-bold mb-4">Recent Activity</h3>
           <div className="space-y-3">
             {[
-              { user: '0x1a2b...', action: 'bet 50 LPT on NAVI to win round', time: '2s ago' },
-              { user: '0x3c4d...', action: 'bet 25 LPT on First Blood: FaZe', time: '8s ago' },
-              { user: '0x5e6f...', action: 'won 85 LPT on Round 22 prediction', time: '45s ago' },
+              { user: '0x1a2b...', action: `bet 50 LPT on ${match.teamA.shortName} to win round`, time: '2s ago' },
+              { user: '0x3c4d...', action: `bet 25 LPT on First Blood: ${match.teamB.shortName}`, time: '8s ago' },
+              { user: '0x5e6f...', action: 'won 85 LPT on Round prediction', time: '45s ago' },
             ].map((activity, i) => (
               <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-border last:border-0">
                 <div>
