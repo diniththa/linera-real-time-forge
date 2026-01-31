@@ -3,15 +3,20 @@ import { Clock, TrendingUp, TrendingDown } from 'lucide-react';
 import { Market, MarketOption } from '@/types';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useBetting } from '@/contexts/BettingContext';
 
 interface BettingCardProps {
   market: Market;
-  onPlaceBet: (marketId: string, optionId: string, amount: number) => void;
+  onPlaceBet?: (marketId: string, optionId: string, amount: number) => void;
 }
 
 export function BettingCard({ market, onPlaceBet }: BettingCardProps) {
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const { addSelection, selections } = useBetting();
   const [timeLeft, setTimeLeft] = useState<number>(0);
+  
+  // Check if this market already has a selection
+  const currentSelection = selections.find(s => s.market.id === market.id);
+  const selectedOption = currentSelection?.option.id || null;
 
   useEffect(() => {
     const updateTimer = () => {
@@ -76,10 +81,16 @@ export function BettingCard({ market, onPlaceBet }: BettingCardProps) {
           const oddsChange = getOddsChange(option);
           const isSelected = selectedOption === option.id;
 
+          const handleSelect = () => {
+            if (!isClosed) {
+              addSelection(market, option, 10);
+            }
+          };
+
           return (
             <button
               key={option.id}
-              onClick={() => !isClosed && setSelectedOption(option.id)}
+              onClick={handleSelect}
               disabled={isClosed}
               className={cn(
                 'relative p-4 rounded-lg border-2 transition-all text-left',
@@ -135,7 +146,7 @@ export function BettingCard({ market, onPlaceBet }: BettingCardProps) {
         </span>
       </div>
 
-      {/* Place Bet Button */}
+      {/* Quick Bet Amounts */}
       <div className="flex gap-2">
         {[10, 25, 50, 100].map((amount) => (
           <Button
@@ -143,7 +154,12 @@ export function BettingCard({ market, onPlaceBet }: BettingCardProps) {
             variant="outline"
             size="sm"
             disabled={!selectedOption || isClosed}
-            onClick={() => selectedOption && onPlaceBet(market.id, selectedOption, amount)}
+            onClick={() => {
+              if (selectedOption && currentSelection) {
+                addSelection(market, currentSelection.option, amount);
+                onPlaceBet?.(market.id, selectedOption, amount);
+              }
+            }}
             className="flex-1 font-body font-semibold"
           >
             {amount}
@@ -154,7 +170,11 @@ export function BettingCard({ market, onPlaceBet }: BettingCardProps) {
       {selectedOption && !isClosed && (
         <Button
           className="w-full mt-3 font-display font-bold uppercase tracking-wide bg-primary text-primary-foreground hover:bg-primary/90 glow-primary"
-          onClick={() => onPlaceBet(market.id, selectedOption, 100)}
+          onClick={() => {
+            if (currentSelection) {
+              onPlaceBet?.(market.id, selectedOption, currentSelection.amount);
+            }
+          }}
         >
           Place Bet
         </Button>
