@@ -19,6 +19,8 @@ interface WalletContextType {
   error: string | null;
   isCheCkoAvailable: boolean;
   installUrl: string;
+  showInstallGuide: boolean;
+  setShowInstallGuide: (show: boolean) => void;
 }
 
 const initialBalance: UserBalance = {
@@ -41,6 +43,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCheCkoAvailable, setIsCheCkoAvailable] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
 
   // Check for CheCko wallet on mount
   useEffect(() => {
@@ -153,7 +156,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       isConnecting, 
       error, 
       isCheCkoAvailable,
-      installUrl: CHECKO_INSTALL_URL 
+      installUrl: CHECKO_INSTALL_URL,
+      showInstallGuide,
+      setShowInstallGuide,
     }}>
       {children}
     </WalletContext.Provider>
