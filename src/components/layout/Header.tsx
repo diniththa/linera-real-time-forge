@@ -3,6 +3,7 @@ import { Zap, Menu, X, Download } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/contexts/WalletContext';
+import { CheCkoInstallModal } from '@/components/wallet/CheCkoInstallModal';
 import { cn } from '@/lib/utils';
 
 const navLinks = [
@@ -13,7 +14,7 @@ const navLinks = [
 ];
 
 export function Header() {
-  const { wallet, connect, disconnect, isConnecting, isCheCkoAvailable, installUrl, error } = useWallet();
+  const { wallet, connect, disconnect, isConnecting, isCheCkoAvailable, showInstallGuide, setShowInstallGuide, error } = useWallet();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -23,7 +24,7 @@ export function Header() {
 
   const handleConnect = () => {
     if (!isCheCkoAvailable) {
-      window.open(installUrl, '_blank');
+      setShowInstallGuide(true);
     } else {
       connect();
     }
@@ -170,6 +171,9 @@ export function Header() {
           </nav>
         </div>
       )}
+
+      {/* CheCko Install Modal */}
+      <CheCkoInstallModal open={showInstallGuide} onOpenChange={setShowInstallGuide} />
     </header>
   );
 }
