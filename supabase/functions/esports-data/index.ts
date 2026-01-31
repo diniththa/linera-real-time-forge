@@ -7,6 +7,51 @@ const corsHeaders = {
 
 const PANDASCORE_BASE_URL = 'https://api.pandascore.co';
 
+// In-memory cache with TTL
+interface CacheEntry {
+  data: unknown;
+  expiresAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
+
+// Cache TTLs in milliseconds
+const CACHE_TTL = {
+  running: 30 * 1000,    // 30 seconds for live matches
+  upcoming: 5 * 60 * 1000, // 5 minutes for upcoming
+  past: 10 * 60 * 1000,    // 10 minutes for past
+  match: 15 * 1000,        // 15 seconds for specific match
+};
+
+function getCachedData(key: string): unknown | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  
+  if (Date.now() > entry.expiresAt) {
+    cache.delete(key);
+    return null;
+  }
+  
+  return entry.data;
+}
+
+function setCacheData(key: string, data: unknown, ttl: number): void {
+  cache.set(key, {
+    data,
+    expiresAt: Date.now() + ttl,
+  });
+  
+  // Cleanup old entries (keep cache size manageable)
+  if (cache.size > 100) {
+    const now = Date.now();
+    for (const [k, v] of cache.entries()) {
+      if (v.expiresAt < now) {
+        cache.delete(k);
+      }
+    }
+  }
+}
+
 interface PandaScoreMatch {
   id: number;
   name: string;
@@ -82,6 +127,22 @@ serve(async (req) => {
     const game = url.searchParams.get('game'); // 'csgo' for CS2, 'valorant'
     const matchId = url.searchParams.get('matchId');
 
+    // Create cache key
+    const cacheKey = `${action}:${game || 'all'}:${matchId || ''}`;
+    
+    // Check cache first
+    const cachedData = getCachedData(cacheKey);
+    if (cachedData) {
+      console.log('Returning cached data for:', cacheKey);
+      return new Response(JSON.stringify(cachedData), {
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json',
+          'X-Cache': 'HIT',
+        },
+      });
+    }
+
     let endpoint = '';
     const params = new URLSearchParams();
     params.set('page[size]', '20');
@@ -142,8 +203,17 @@ serve(async (req) => {
       ? transformMatch(data as PandaScoreMatch)
       : (data as PandaScoreMatch[]).map(transformMatch);
 
+    // Cache the result
+    const ttl = CACHE_TTL[action as keyof typeof CACHE_TTL] || CACHE_TTL.running;
+    setCacheData(cacheKey, transformedData, ttl);
+    console.log('Cached data for:', cacheKey, 'TTL:', ttl / 1000, 'seconds');
+
     return new Response(JSON.stringify(transformedData), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { 
+        ...corsHeaders, 
+        'Content-Type': 'application/json',
+        'X-Cache': 'MISS',
+      },
     });
 
   } catch (error: unknown) {
@@ -155,7 +225,6 @@ serve(async (req) => {
     );
   }
 });
-
 function transformMatch(match: PandaScoreMatch) {
   const teamA = match.opponents[0]?.opponent;
   const teamB = match.opponents[1]?.opponent;

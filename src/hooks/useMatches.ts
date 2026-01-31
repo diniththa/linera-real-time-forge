@@ -115,8 +115,8 @@ export function useRunningMatches(game?: Game) {
   return useQuery({
     queryKey: ['matches', 'running', game],
     queryFn: () => fetchMatches({ action: 'running', game }),
-    refetchInterval: 30000, // Refetch every 30 seconds for live data
-    staleTime: 10000,
+    refetchInterval: 60000, // Refetch every 60 seconds (was 30s)
+    staleTime: 30000, // Consider data stale after 30s
   });
 }
 
@@ -124,8 +124,8 @@ export function useUpcomingMatches(game?: Game) {
   return useQuery({
     queryKey: ['matches', 'upcoming', game],
     queryFn: () => fetchMatches({ action: 'upcoming', game }),
-    refetchInterval: 60000, // Refetch every minute
-    staleTime: 30000,
+    refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes (was 1min)
+    staleTime: 2 * 60 * 1000, // Consider stale after 2 minutes
   });
 }
 
@@ -217,6 +217,7 @@ export function useMatch(matchId: string) {
       }
     },
     enabled: !!matchId,
-    refetchInterval: matchId ? 15000 : false, // Refetch every 15s for live match
+    refetchInterval: matchId ? 30000 : false, // Refetch every 30s (was 15s)
+    staleTime: 15000,
   });
 }
