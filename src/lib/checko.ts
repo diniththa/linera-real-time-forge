@@ -31,6 +31,13 @@ export interface CheCkoProvider {
   signTransaction(transaction: unknown): Promise<string>;
   sendTransaction(signedTransaction: string): Promise<string>;
   
+  // Linera-specific methods
+  signAndSubmit?(params: {
+    chainId: string;
+    applicationId: string;
+    operation: unknown;
+  }): Promise<{ hash: string }>;
+  
   // Event listeners
   on(event: string, callback: (...args: unknown[]) => void): void;
   off(event: string, callback: (...args: unknown[]) => void): void;
