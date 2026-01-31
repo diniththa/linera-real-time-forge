@@ -1,4 +1,5 @@
-import { X, Trash2, Receipt, Zap } from 'lucide-react';
+import { useState } from 'react';
+import { X, Trash2, Receipt, Zap, Loader2 } from 'lucide-react';
 import { useBetting } from '@/contexts/BettingContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { useWallet } from '@/contexts/WalletContext';
+import { usePlaceBet } from '@/lib/linera';
 import { toast } from '@/hooks/use-toast';
 
 export function BettingSlip() {
@@ -26,8 +28,10 @@ export function BettingSlip() {
   } = useBetting();
 
   const { wallet } = useWallet();
+  const placeBetMutation = usePlaceBet();
+  const [isPlacing, setIsPlacing] = useState(false);
 
-  const handlePlaceBets = () => {
+  const handlePlaceBets = async () => {
     if (!wallet.connected) {
       toast({
         title: "Wallet not connected",
@@ -46,13 +50,61 @@ export function BettingSlip() {
       return;
     }
 
-    // TODO: Integrate with Linera contract
-    toast({
-      title: "Bets placed!",
-      description: `${selections.length} bet(s) placed for ${totalStake} LPT`,
-    });
-    clearSelections();
-    closeSlip();
+    setIsPlacing(true);
+
+    try {
+      // Place all bets sequentially (could be parallelized if contract supports batch)
+      const results: { success: boolean; marketId: string; error?: string }[] = [];
+      
+      for (const selection of selections) {
+        try {
+          await placeBetMutation.mutateAsync({
+            marketId: selection.market.id,
+            optionId: parseInt(selection.option.id, 10),
+            amount: selection.amount,
+          });
+          results.push({ success: true, marketId: selection.market.id });
+        } catch (error) {
+          results.push({ 
+            success: false, 
+            marketId: selection.market.id,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+
+      if (successCount > 0) {
+        toast({
+          title: `${successCount} bet${successCount > 1 ? 's' : ''} placed!`,
+          description: `Total stake: ${totalStake} LPT`,
+        });
+      }
+
+      if (failCount > 0) {
+        toast({
+          title: `${failCount} bet${failCount > 1 ? 's' : ''} failed`,
+          description: "Some bets could not be placed. Please try again.",
+          variant: "destructive",
+        });
+      }
+
+      // Clear successful bets
+      if (successCount === selections.length) {
+        clearSelections();
+        closeSlip();
+      }
+    } catch (error) {
+      toast({
+        title: "Failed to place bets",
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: "destructive",
+      });
+    } finally {
+      setIsPlacing(false);
+    }
   };
 
   return (
@@ -172,14 +224,24 @@ export function BettingSlip() {
 
             <Button
               onClick={handlePlaceBets}
+              disabled={isPlacing || placeBetMutation.isPending}
               className={cn(
                 "w-full font-display font-bold uppercase tracking-wide",
                 "bg-primary text-primary-foreground hover:bg-primary/90",
                 "glow-primary h-12 text-lg"
               )}
             >
-              <Zap className="h-5 w-5 mr-2" />
-              Place {selections.length} Bet{selections.length > 1 ? 's' : ''}
+              {isPlacing ? (
+                <>
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  Placing Bets...
+                </>
+              ) : (
+                <>
+                  <Zap className="h-5 w-5 mr-2" />
+                  Place {selections.length} Bet{selections.length > 1 ? 's' : ''}
+                </>
+              )}
             </Button>
 
             {!wallet.connected && (
