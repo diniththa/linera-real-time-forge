@@ -1,13 +1,15 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Wallet, ArrowUpRight, ArrowDownLeft, History, TrendingUp, Target, Trophy, Download, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/contexts/WalletContext';
 import { CheCkoInstallModal } from '@/components/wallet/CheCkoInstallModal';
+import { DepositModal } from '@/components/wallet/DepositModal';
 import { cn } from '@/lib/utils';
 
 export default function WalletDashboard() {
   const { wallet, connect, isConnecting, isCheCkoAvailable, showInstallGuide, setShowInstallGuide, error } = useWallet();
-
+  const [showDepositModal, setShowDepositModal] = useState(false);
   // Mock transaction history
   const transactions = [
     { id: '1', type: 'win', amount: 85, description: 'Won: NAVI Round 22 Winner', time: '2 min ago' },
@@ -152,21 +154,27 @@ export default function WalletDashboard() {
 
         {/* Quick Actions */}
         <div className="flex gap-4 mb-8">
-          <Button className="flex-1 font-body font-semibold" variant="outline">
+          <Button 
+            className="flex-1 font-body font-semibold bg-primary text-primary-foreground hover:bg-primary/90" 
+            onClick={() => setShowDepositModal(true)}
+          >
             <ArrowDownLeft className="mr-2 h-4 w-4" />
-            Deposit
+            Deposit TLINERA
           </Button>
           <Button className="flex-1 font-body font-semibold" variant="outline">
             <ArrowUpRight className="mr-2 h-4 w-4" />
             Withdraw
           </Button>
-          <Button asChild className="flex-1 font-body font-semibold bg-primary text-primary-foreground">
+          <Button asChild className="flex-1 font-body font-semibold" variant="outline">
             <Link to="/matches">
               <Trophy className="mr-2 h-4 w-4" />
               Start Betting
             </Link>
           </Button>
         </div>
+
+        {/* Deposit Modal */}
+        <DepositModal open={showDepositModal} onOpenChange={setShowDepositModal} />
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Stats */}
