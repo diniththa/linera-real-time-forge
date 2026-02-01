@@ -1,10 +1,12 @@
 /**
  * CheCko Wallet Integration for Linera Blockchain
  * Browser wallet by ResPeer: https://github.com/respeer-ai/linera-wallet
- * 
+ *
  * CheCko uses JSON-RPC messaging similar to MetaMask/EIP-1193 pattern.
  * It injects a provider into the window object for dApp communication.
  */
+
+import { keccak_256 } from 'js-sha3';
 
 export interface CheCkoAccount {
   chainId: string;
@@ -22,7 +24,9 @@ let _rpcId = 1;
 async function rpcRequest<T = unknown>(
   provider: CheCkoProvider,
   method: string,
-  params: unknown[] = []
+  // NOTE: EIP-1193 typically uses an array, but CheCko also uses object params
+  // (e.g. { publicKey, query: { query, variables } } for linera_graphqlQuery).
+  params: unknown = []
 ): Promise<T> {
   // EIP-1193
   if (typeof provider.request === 'function') {
@@ -31,18 +35,20 @@ async function rpcRequest<T = unknown>(
 
   // Legacy web3 provider style
   if (typeof provider.send === 'function') {
-    return (await provider.send(method, params)) as T;
+    const legacyParams = Array.isArray(params) ? params : params === undefined ? [] : [params];
+    return (await provider.send(method, legacyParams)) as T;
   }
 
   if (typeof provider.sendAsync === 'function') {
     const id = _rpcId++;
+    const legacyParams = Array.isArray(params) ? params : params === undefined ? [] : [params];
     return await new Promise<T>((resolve, reject) => {
       provider.sendAsync!(
         {
           id,
           jsonrpc: '2.0',
           method,
-          params,
+          params: legacyParams,
         },
         (error, response) => {
           if (error) return reject(error);
@@ -79,9 +85,10 @@ interface JsonRpcResponse<T = unknown> {
 export interface CheCkoProvider {
   isCheCko?: boolean;
   isLineraWallet?: boolean;
+  providers?: CheCkoProvider[]; // some wallets (e.g. MetaMask) expose multiple injected providers
   
   // EIP-1193 standard request method (primary method)
-  request<T = unknown>(args: { method: string; params?: unknown[] }): Promise<T>;
+  request<T = unknown>(args: { method: string; params?: unknown }): Promise<T>;
   
   // Legacy send method (backup)
   send?(method: string, params?: unknown[]): Promise<unknown>;
@@ -101,6 +108,21 @@ declare global {
   }
 }
 
+function pickCheCkoFromEthereum(ethereum: CheCkoProvider | undefined): CheCkoProvider | null {
+  if (!ethereum) return null;
+
+  // Some extensions inject multiple providers under window.ethereum.providers.
+  if (Array.isArray(ethereum.providers) && ethereum.providers.length > 0) {
+    return (
+      ethereum.providers.find((p) => p?.isCheCko || p?.isLineraWallet) ??
+      null
+    );
+  }
+
+  if (ethereum.isCheCko || ethereum.isLineraWallet) return ethereum;
+  return null;
+}
+
 /**
  * Check if CheCko wallet is installed
  */
@@ -110,11 +132,9 @@ export function isCheCkoInstalled(): boolean {
   // Check for CheCko-specific providers
   const provider = window.checko || window.linera;
   if (provider) return true;
-  
-  // Check if ethereum provider is CheCko
-  if (window.ethereum?.isCheCko || window.ethereum?.isLineraWallet) {
-    return true;
-  }
+
+  // Check if ethereum provider (or one of its sub-providers) is CheCko
+  if (pickCheCkoFromEthereum(window.ethereum) != null) return true;
   
   return false;
 }
@@ -128,13 +148,35 @@ export function getCheCkoProvider(): CheCkoProvider | null {
   // Prefer CheCko-specific providers
   if (window.checko) return window.checko;
   if (window.linera) return window.linera;
-  
-  // Fall back to ethereum if it's CheCko
-  if (window.ethereum?.isCheCko || window.ethereum?.isLineraWallet) {
-    return window.ethereum;
-  }
+
+  // Fall back to ethereum if it's CheCko (or one of its providers)
+  const picked = pickCheCkoFromEthereum(window.ethereum);
+  if (picked) return picked;
   
   return null;
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const normalized = hex.startsWith('0x') ? hex.slice(2) : hex;
+  const clean = normalized.length % 2 === 0 ? normalized : `0${normalized}`;
+
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+// Matches linera-meme's approach: owner = keccak256("Ed25519PublicKey::" + publicKeyBytes)
+function ownerFromPublicKey(publicKey: string): string {
+  const publicKeyBytes = hexToBytes(publicKey);
+  const typeNameBytes = new TextEncoder().encode('Ed25519PublicKey::');
+  const bytes = new Uint8Array([...typeNameBytes, ...publicKeyBytes]);
+  return keccak_256(bytes);
+}
+
+function formalizeOwner(owner: string): string {
+  return owner.startsWith('0x') ? owner : `0x${owner}`;
 }
 
 /**
@@ -300,6 +342,82 @@ export async function getCheCkoBalance(address: string): Promise<CheCkoBalance |
     return null;
   }
 
+  // Method 0 (preferred): linera_graphqlQuery balances(chainOwners) like linera-meme
+  // This avoids relying on eth_getBalance and also confirms we're talking to the Linera wallet,
+  // not a different injected provider (e.g. MetaMask).
+  try {
+    // Try to get chainId (CheCko supports metamask_getProviderState)
+    let chainId: string | null = null;
+    try {
+      const state = await rpcRequest<Record<string, unknown>>(provider, 'metamask_getProviderState');
+      if (typeof state?.chainId === 'string') chainId = state.chainId;
+    } catch {
+      // ignore
+    }
+    if (!chainId) {
+      try {
+        chainId = await rpcRequest<string>(provider, 'eth_chainId', []);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (chainId) {
+      const chainIdNormalized = chainId.startsWith('0x') ? chainId.substring(2) : chainId;
+      const owner = formalizeOwner(ownerFromPublicKey(address));
+      const BALANCES_CHAIN_OWNERS_QUERY = `query balances($chainOwners: [ChainOwners!]!) {\n  balances(chainOwners: $chainOwners)\n}`;
+
+      const result = await rpcRequest<unknown>(provider, 'linera_graphqlQuery', {
+        publicKey: address,
+        query: {
+          query: BALANCES_CHAIN_OWNERS_QUERY,
+          variables: {
+            chainOwners: [
+              {
+                chainId: chainIdNormalized,
+                owners: [owner],
+              },
+            ],
+          },
+        },
+      });
+
+      // CheCko may return either the raw balances map or a wrapped object.
+      const balancesAny = result as any;
+      const balancesMap =
+        balancesAny?.balances ??
+        balancesAny?.data?.balances ??
+        balancesAny;
+
+      if (balancesMap && typeof balancesMap === 'object') {
+        const chainEntry = balancesMap[chainIdNormalized] ?? balancesMap[chainId];
+
+        const chainBalanceStr =
+          chainEntry?.chainBalance ??
+          chainEntry?.chain_balance ??
+          '0';
+        const ownerBalances =
+          chainEntry?.ownerBalances ??
+          chainEntry?.account_balances ??
+          {};
+
+        let total = parseFloat(chainBalanceStr || '0');
+        if (ownerBalances && typeof ownerBalances === 'object') {
+          for (const amount of Object.values(ownerBalances as Record<string, string>)) {
+            total += parseFloat(amount || '0');
+          }
+        }
+
+        if (!isNaN(total)) {
+          console.log('[CheCko] Balance from linera_graphqlQuery (chainOwners):', total);
+          return { available: total.toString(), locked: '0' };
+        }
+      }
+    }
+  } catch (error) {
+    console.log('[CheCko] linera_graphqlQuery (chainOwners) failed:', error);
+  }
+
   // Method 1: Try eth_getBalance - CheCko returns a plain number (total balance)
   // This is the preferred method as CheCko handles all the internal complexity
   try {
@@ -365,56 +483,67 @@ export async function getCheCkoBalance(address: string): Promise<CheCkoBalance |
     console.log('[CheCko] eth_getBalance failed:', error);
   }
 
-  // Method 2: Try linera_graphqlQuery directly to get balances
-  // This matches how CheCko internally fetches balances
+  // Method 2 (legacy CheCko): balances(chainIds, publicKeys)
+  // Keep as a fallback for wallet builds that still expose this path.
   try {
-    console.log('[CheCko] Trying linera_graphqlQuery for balances...');
-    
-    // Get the current chain ID
+    console.log('[CheCko] Trying linera_graphqlQuery for balances (chainIds/publicKeys)...');
+
     let chainId: string | null = null;
     try {
       chainId = await rpcRequest<string>(provider, 'eth_chainId', []);
       console.log('[CheCko] Current chainId:', chainId);
-    } catch (e) {
-      console.log('[CheCko] Could not get chainId:', e);
+    } catch {
+      // ignore
     }
 
     if (chainId) {
-      // Format the address - CheCko uses addresses without 0x prefix in some cases
       const publicKey = address.startsWith('0x') ? address.substring(2) : address;
-      
-      const query = `query getChainAccountBalances($chainIds: [String!]!, $publicKeys: [String!]!) {
-        balances(chainIds: $chainIds, publicKeys: $publicKeys)
-      }`;
-      
-      const result = await rpcRequest<{ balances?: CheCkoBalanceResponse }>(
-        provider,
-        'linera_graphqlQuery',
-        [{
+
+      const query = `query getChainAccountBalances($chainIds: [String!]!, $publicKeys: [String!]!) {\n  balances(chainIds: $chainIds, publicKeys: $publicKeys)\n}`;
+
+      // Some wallet builds expect params as an array; some as an object.
+      const tryShapes: unknown[] = [
+        // object params
+        {
           query: {
-            query: query,
-            variables: { 
-              chainIds: [chainId], 
-              publicKeys: [publicKey] 
+            query,
+            variables: { chainIds: [chainId], publicKeys: [publicKey] },
+            operationName: 'getChainAccountBalances',
+          },
+        },
+        // array params
+        [
+          {
+            query: {
+              query,
+              variables: { chainIds: [chainId], publicKeys: [publicKey] },
+              operationName: 'getChainAccountBalances',
             },
-            operationName: 'getChainAccountBalances'
+          },
+        ],
+      ];
+
+      for (const params of tryShapes) {
+        try {
+          const result = await rpcRequest<{ balances?: CheCkoBalanceResponse }>(
+            provider,
+            'linera_graphqlQuery',
+            params
+          );
+
+          console.log('[CheCko] linera_graphqlQuery result:', result);
+          if (result?.balances) {
+            const total = parseCheCkoBalancesResponse(result.balances);
+            console.log(`[CheCko] Total balance from GraphQL: ${total}`);
+            return { available: total.toString(), locked: '0' };
           }
-        }]
-      );
-      
-      console.log('[CheCko] linera_graphqlQuery result:', result);
-      
-      if (result?.balances) {
-        const total = parseCheCkoBalancesResponse(result.balances);
-        console.log(`[CheCko] Total balance from GraphQL: ${total}`);
-        return {
-          available: total.toString(),
-          locked: '0',
-        };
+        } catch {
+          // try next shape
+        }
       }
     }
   } catch (error) {
-    console.log('[CheCko] linera_graphqlQuery failed:', error);
+    console.log('[CheCko] linera_graphqlQuery (chainIds/publicKeys) failed:', error);
   }
 
   // Method 3: Try other balance methods as fallback
