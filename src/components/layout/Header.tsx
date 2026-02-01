@@ -77,21 +77,36 @@ export function Header() {
           <div className="flex items-center gap-4">
             {wallet.connected ? (
               <div className="hidden sm:flex items-center gap-2">
-                {/* Balance with Deposit Dropdown */}
+                {/* Deposit Button - Prominent */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDepositModal(true)}
+                  className="font-body font-semibold border-primary/50 hover:border-primary hover:bg-primary/10 text-primary"
+                >
+                  <ArrowDownLeft className="mr-1.5 h-4 w-4" />
+                  Deposit
+                </Button>
+
+                {/* Balance Badge */}
+                <Link 
+                  to="/wallet"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted border border-border hover:border-primary/50 transition-colors"
+                >
+                  <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                  <span className="font-body text-sm font-semibold text-primary">
+                    {wallet.balance.available.toLocaleString()} LPT
+                  </span>
+                </Link>
+
+                {/* Address with Disconnect */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted border border-border hover:border-primary/50 transition-colors cursor-pointer">
-                      <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                      <span className="font-body text-sm font-semibold text-primary">
-                        {wallet.balance.available.toLocaleString()} LPT
-                      </span>
+                    <button className="px-3 py-1.5 rounded-lg bg-card border border-border hover:border-primary/50 transition-colors font-body text-sm font-semibold text-muted-foreground hover:text-foreground cursor-pointer">
+                      {formatAddress(wallet.address!)}
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onClick={() => setShowDepositModal(true)} className="cursor-pointer">
-                      <ArrowDownLeft className="mr-2 h-4 w-4 text-primary" />
-                      <span>Deposit TLINERA</span>
-                    </DropdownMenuItem>
+                  <DropdownMenuContent align="end" className="w-44">
                     <DropdownMenuItem asChild className="cursor-pointer">
                       <Link to="/wallet">
                         <Wallet className="mr-2 h-4 w-4" />
@@ -105,14 +120,6 @@ export function Header() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-
-                {/* Address Badge */}
-                <Link
-                  to="/wallet"
-                  className="px-3 py-1.5 rounded-lg bg-card border border-border hover:border-primary/50 transition-colors font-body text-sm font-semibold text-muted-foreground hover:text-foreground"
-                >
-                  {formatAddress(wallet.address!)}
-                </Link>
               </div>
             ) : (
               <Button
