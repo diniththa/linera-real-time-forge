@@ -53,7 +53,33 @@ export function BettingSlip() {
     setIsPlacing(true);
 
     try {
-      // Place all bets sequentially (could be parallelized if contract supports batch)
+      // Check if we're using mock markets (mock IDs start with "market-" or "opt-")
+      const hasMockMarkets = selections.some(s => 
+        s.market.id.startsWith('market-') || s.option.id.startsWith('opt-')
+      );
+
+      if (hasMockMarkets) {
+        // Demo mode - markets don't exist on-chain yet
+        toast({
+          title: "Demo Mode",
+          description: "These are demo markets. Real on-chain markets coming soon! Your wallet balance won't be affected.",
+          variant: "default",
+        });
+        
+        // Simulate success for demo
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        toast({
+          title: "Demo prediction recorded!",
+          description: `${selections.length} prediction${selections.length > 1 ? 's' : ''} placed in demo mode.`,
+        });
+        
+        clearSelections();
+        closeSlip();
+        return;
+      }
+
+      // Real on-chain bet placement
       const results: { success: boolean; marketId: string; error?: string }[] = [];
       
       for (const selection of selections) {
@@ -65,6 +91,7 @@ export function BettingSlip() {
           });
           results.push({ success: true, marketId: selection.market.id });
         } catch (error) {
+          console.error('Bet placement error:', error);
           results.push({ 
             success: false, 
             marketId: selection.market.id,
@@ -78,15 +105,16 @@ export function BettingSlip() {
 
       if (successCount > 0) {
         toast({
-          title: `${successCount} bet${successCount > 1 ? 's' : ''} placed!`,
+          title: `${successCount} prediction${successCount > 1 ? 's' : ''} placed!`,
           description: `Total stake: ${totalStake} LPT`,
         });
       }
 
       if (failCount > 0) {
+        const errorMsg = results.find(r => !r.success)?.error || 'Market may not exist on-chain';
         toast({
-          title: `${failCount} bet${failCount > 1 ? 's' : ''} failed`,
-          description: "Some bets could not be placed. Please try again.",
+          title: `${failCount} prediction${failCount > 1 ? 's' : ''} failed`,
+          description: errorMsg,
           variant: "destructive",
         });
       }
@@ -97,8 +125,9 @@ export function BettingSlip() {
         closeSlip();
       }
     } catch (error) {
+      console.error('Failed to place bets:', error);
       toast({
-        title: "Failed to place bets",
+        title: "Failed to place predictions",
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: "destructive",
       });
