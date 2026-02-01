@@ -1,9 +1,17 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Zap, Menu, X, Download } from 'lucide-react';
+import { Zap, Menu, X, Download, ArrowDownLeft, ArrowUpRight, Wallet, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useWallet } from '@/contexts/WalletContext';
 import { CheCkoInstallModal } from '@/components/wallet/CheCkoInstallModal';
+import { DepositModal } from '@/components/wallet/DepositModal';
 import { cn } from '@/lib/utils';
 
 const navLinks = [
@@ -17,6 +25,7 @@ export function Header() {
   const { wallet, connect, disconnect, isConnecting, isCheCkoAvailable, showInstallGuide, setShowInstallGuide, error } = useWallet();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showDepositModal, setShowDepositModal] = useState(false);
 
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -67,21 +76,43 @@ export function Header() {
           {/* Wallet & Mobile Menu */}
           <div className="flex items-center gap-4">
             {wallet.connected ? (
-              <div className="hidden sm:flex items-center gap-3">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted border border-border">
-                  <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                  <span className="font-body text-sm font-semibold text-primary">
-                    {wallet.balance.available.toLocaleString()} LPT
-                  </span>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={disconnect}
-                  className="font-body font-semibold"
+              <div className="hidden sm:flex items-center gap-2">
+                {/* Balance with Deposit Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted border border-border hover:border-primary/50 transition-colors cursor-pointer">
+                      <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                      <span className="font-body text-sm font-semibold text-primary">
+                        {wallet.balance.available.toLocaleString()} LPT
+                      </span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem onClick={() => setShowDepositModal(true)} className="cursor-pointer">
+                      <ArrowDownLeft className="mr-2 h-4 w-4 text-primary" />
+                      <span>Deposit TLINERA</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className="cursor-pointer">
+                      <Link to="/wallet">
+                        <Wallet className="mr-2 h-4 w-4" />
+                        <span>Wallet Dashboard</span>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={disconnect} className="cursor-pointer text-destructive focus:text-destructive">
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Disconnect</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Address Badge */}
+                <Link
+                  to="/wallet"
+                  className="px-3 py-1.5 rounded-lg bg-card border border-border hover:border-primary/50 transition-colors font-body text-sm font-semibold text-muted-foreground hover:text-foreground"
                 >
                   {formatAddress(wallet.address!)}
-                </Button>
+                </Link>
               </div>
             ) : (
               <Button
@@ -134,14 +165,44 @@ export function Header() {
             ))}
             
             {wallet.connected ? (
-              <div className="flex flex-col gap-2 pt-4 border-t border-border">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                  <span className="font-body text-sm font-semibold text-primary">
-                    {wallet.balance.available.toLocaleString()} LPT
+              <div className="flex flex-col gap-3 pt-4 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                    <span className="font-body text-sm font-semibold text-primary">
+                      {wallet.balance.available.toLocaleString()} LPT
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {formatAddress(wallet.address!)}
                   </span>
                 </div>
-                <Button variant="outline" size="sm" onClick={disconnect}>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button 
+                    size="sm" 
+                    onClick={() => {
+                      setShowDepositModal(true);
+                      setMobileMenuOpen(false);
+                    }}
+                    className="bg-primary text-primary-foreground"
+                  >
+                    <ArrowDownLeft className="mr-1 h-4 w-4" />
+                    Deposit
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    asChild
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <Link to="/wallet">
+                      <Wallet className="mr-1 h-4 w-4" />
+                      Wallet
+                    </Link>
+                  </Button>
+                </div>
+                <Button variant="ghost" size="sm" onClick={disconnect} className="text-destructive hover:text-destructive">
+                  <LogOut className="mr-2 h-4 w-4" />
                   Disconnect
                 </Button>
               </div>
@@ -172,8 +233,9 @@ export function Header() {
         </div>
       )}
 
-      {/* CheCko Install Modal */}
+      {/* Modals */}
       <CheCkoInstallModal open={showInstallGuide} onOpenChange={setShowInstallGuide} />
+      <DepositModal open={showDepositModal} onOpenChange={setShowDepositModal} />
     </header>
   );
 }
