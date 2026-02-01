@@ -16,6 +16,10 @@ import { getCheCkoProvider, type CheCkoProvider } from '../checko';
 
 /** Default configuration for Linera Testnet Conway */
 export const DEFAULT_CONFIG: Partial<LineraClientConfig> = {
+  // Public defaults for the deployed Live Predict app on Conway.
+  // If you deploy your own app, set VITE_LINERA_APP_ID / VITE_LINERA_CHAIN_ID instead.
+  applicationId: 'dc5c4209c9254144b904e4aa31091931f0be4924799cf5bf1a6afd6889b63cc7',
+  chainId: '8a2da4f414c912deb3667d216f6793d5e800cd22f6e4920d468cf2d8241abd98',
   testnet: true,
   graphqlEndpoint: 'https://conway.linera.net/graphql',
 };
@@ -31,8 +35,16 @@ export class LineraClient {
 
   constructor(config: Partial<LineraClientConfig> = {}) {
     this.config = {
-      applicationId: config.applicationId || import.meta.env.VITE_LINERA_APP_ID || '',
-      chainId: config.chainId || import.meta.env.VITE_LINERA_CHAIN_ID || '',
+      applicationId:
+        config.applicationId ||
+        import.meta.env.VITE_LINERA_APP_ID ||
+        DEFAULT_CONFIG.applicationId ||
+        '',
+      chainId:
+        config.chainId ||
+        import.meta.env.VITE_LINERA_CHAIN_ID ||
+        DEFAULT_CONFIG.chainId ||
+        '',
       graphqlEndpoint: config.graphqlEndpoint || DEFAULT_CONFIG.graphqlEndpoint!,
       testnet: config.testnet ?? DEFAULT_CONFIG.testnet,
     };
@@ -222,13 +234,12 @@ export class LineraClient {
     };
 
     const receipt = await this.executeOperation(operation);
-    
-    const response = await this.parseOperationResponse(receipt);
-    if (response.type === 'Deposited') {
-      return { newBalance: response.newBalance, receipt };
-    }
-    
-    throw new Error(response.type === 'Error' ? response.message : 'Failed to deposit');
+
+    // The app's GraphQL mutations only schedule an operation (they return empty bytes),
+    // so we can't parse an OperationResponse from the mutation return value.
+    // Instead, after the tx is confirmed, we read the user's on-chain LPT balance.
+    const newBalance = await this.queryLptBalanceForCurrentUser();
+    return { newBalance, receipt };
   }
 
   /**
@@ -241,13 +252,9 @@ export class LineraClient {
     };
 
     const receipt = await this.executeOperation(operation);
-    
-    const response = await this.parseOperationResponse(receipt);
-    if (response.type === 'Withdrawn') {
-      return { newBalance: response.newBalance, receipt };
-    }
-    
-    throw new Error(response.type === 'Error' ? response.message : 'Failed to withdraw');
+
+    const newBalance = await this.queryLptBalanceForCurrentUser();
+    return { newBalance, receipt };
   }
 
   // ============================================
@@ -418,6 +425,12 @@ export class LineraClient {
       throw new Error('Not connected to Linera');
     }
 
+    if (!this.config.applicationId) {
+      throw new Error(
+        'Missing application ID. Set VITE_LINERA_APP_ID (or update the default app ID) before depositing.'
+      );
+    }
+
     try {
       // Get current user's public key for the mutation
       const accounts = await this.provider.request<string[]>({ method: 'eth_accounts' });
@@ -557,6 +570,93 @@ export class LineraClient {
 
     // This would parse actual response data from the receipt
     return { type: 'Error', message: 'Response parsing not implemented' };
+  }
+
+  /**
+   * Query the app's on-chain LPT balance for the currently connected user.
+   *
+   * The Live Predict contract keys balances by the caller's chain identifier.
+   * We attempt a few reasonable owner representations from the wallet.
+   */
+  private async queryLptBalanceForCurrentUser(): Promise<Amount> {
+    try {
+      await this.ensureConnected();
+      if (!this.provider) return 'unknown';
+
+      const accounts = await this.provider.request<string[]>({ method: 'eth_accounts' });
+      const publicKey = accounts?.[0];
+      if (!publicKey) return 'unknown';
+
+      const ownerCandidates = await this.getOwnerCandidates();
+      if (ownerCandidates.length === 0) return 'unknown';
+
+      const query = `query balance($owner: String!) { balance(owner: $owner) }`;
+
+      for (const owner of ownerCandidates) {
+        try {
+          const raw = await this.provider.request<any>({
+            method: 'linera_graphqlQuery',
+            params: {
+              applicationId: this.config.applicationId,
+              publicKey,
+              query: {
+                query,
+                variables: { owner },
+              },
+            },
+          });
+
+          const data = raw?.data ?? raw;
+          const bal = data?.balance;
+          if (typeof bal === 'string') return bal;
+          if (typeof bal === 'number') return bal.toString();
+        } catch {
+          // try next owner candidate
+        }
+      }
+    } catch (err) {
+      console.warn('[LineraClient] Failed to query LPT balance after tx:', err);
+    }
+    return 'unknown';
+  }
+
+  private async getOwnerCandidates(): Promise<string[]> {
+    const candidates = new Set<string>();
+
+    // Prefer chainId from wallet provider.
+    try {
+      if (this.provider) {
+        try {
+          const state = await this.provider.request<any>({ method: 'metamask_getProviderState' });
+          if (typeof state?.chainId === 'string') {
+            candidates.add(state.chainId);
+            candidates.add(state.chainId.startsWith('0x') ? state.chainId.slice(2) : state.chainId);
+          }
+        } catch {
+          // ignore
+        }
+
+        try {
+          const chainId = await this.provider.request<string>({ method: 'eth_chainId' });
+          if (typeof chainId === 'string') {
+            candidates.add(chainId);
+            candidates.add(chainId.startsWith('0x') ? chainId.slice(2) : chainId);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // Also try configured chain id (if provided).
+    if (this.config.chainId) {
+      candidates.add(this.config.chainId);
+      candidates.add(this.config.chainId.startsWith('0x') ? this.config.chainId.slice(2) : this.config.chainId);
+    }
+
+    return Array.from(candidates).filter(Boolean);
   }
 
   /**
