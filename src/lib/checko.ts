@@ -17,6 +17,45 @@ export interface CheCkoBalance {
   locked: string;
 }
 
+let _rpcId = 1;
+
+async function rpcRequest<T = unknown>(
+  provider: CheCkoProvider,
+  method: string,
+  params: unknown[] = []
+): Promise<T> {
+  // EIP-1193
+  if (typeof provider.request === 'function') {
+    return provider.request<T>({ method, params });
+  }
+
+  // Legacy web3 provider style
+  if (typeof provider.send === 'function') {
+    return (await provider.send(method, params)) as T;
+  }
+
+  if (typeof provider.sendAsync === 'function') {
+    const id = _rpcId++;
+    return await new Promise<T>((resolve, reject) => {
+      provider.sendAsync!(
+        {
+          id,
+          jsonrpc: '2.0',
+          method,
+          params,
+        },
+        (error, response) => {
+          if (error) return reject(error);
+          if (response?.error) return reject(new Error(response.error.message));
+          resolve(response?.result as T);
+        }
+      );
+    });
+  }
+
+  throw new Error('CheCko provider does not support request/send/sendAsync');
+}
+
 // JSON-RPC request/response types
 interface JsonRpcRequest {
   id: number;
@@ -132,69 +171,24 @@ export async function connectCheCko(): Promise<CheCkoAccount | null> {
   }
 
   try {
-    // Use EIP-1193 request method with eth_requestAccounts
-    if (typeof provider.request === 'function') {
-      const accounts = await provider.request<string[]>({ 
-        method: 'eth_requestAccounts',
-        params: [] 
-      });
-      
-      if (accounts && accounts.length > 0) {
-        // Get chain ID
-        let chainId = '';
-        try {
-          chainId = await provider.request<string>({ method: 'eth_chainId' });
-        } catch {
-          chainId = 'unknown';
-        }
-        
-        return {
-          address: accounts[0],
-          chainId: chainId,
-        };
-      }
+    const accounts = await rpcRequest<string[]>(provider, 'eth_requestAccounts', []);
+
+    if (!accounts || accounts.length === 0) {
+      throw new Error('No accounts returned');
     }
-    
-    // Try legacy send method if request is not available
-    if (typeof provider.send === 'function') {
-      const result = await provider.send('eth_requestAccounts', []);
-      if (Array.isArray(result) && result.length > 0) {
-        return {
-          address: result[0] as string,
-          chainId: 'unknown',
-        };
-      }
+
+    // Best-effort chain id
+    let chainId = 'unknown';
+    try {
+      chainId = await rpcRequest<string>(provider, 'eth_chainId', []);
+    } catch {
+      // ignore
     }
-    
-    // Try sendAsync as last resort
-    if (typeof provider.sendAsync === 'function') {
-      return new Promise((resolve, reject) => {
-        provider.sendAsync!(
-          {
-            id: 1,
-            jsonrpc: '2.0',
-            method: 'eth_requestAccounts',
-            params: [],
-          },
-          (error, response) => {
-            if (error) {
-              reject(error);
-            } else if (response?.result && Array.isArray(response.result)) {
-              resolve({
-                address: response.result[0] as string,
-                chainId: 'unknown',
-              });
-            } else if (response?.error) {
-              reject(new Error(response.error.message));
-            } else {
-              reject(new Error('No accounts returned'));
-            }
-          }
-        );
-      });
-    }
-    
-    throw new Error('CheCko provider does not support any known connection method');
+
+    return {
+      address: accounts[0],
+      chainId,
+    };
   } catch (error) {
     console.error('Failed to connect to CheCko wallet:', error);
     throw error;
@@ -222,13 +216,8 @@ export async function getCheCkoAccounts(): Promise<string[]> {
   }
 
   try {
-    if (typeof provider.request === 'function') {
-      const accounts = await provider.request<string[]>({ 
-        method: 'eth_accounts',
-        params: [] 
-      });
-      return accounts || [];
-    }
+    const accounts = await rpcRequest<string[]>(provider, 'eth_accounts', []);
+    return accounts || [];
   } catch (error) {
     console.error('Failed to get accounts from CheCko wallet:', error);
   }
@@ -247,24 +236,19 @@ export async function getCheCkoBalance(address: string): Promise<CheCkoBalance |
   }
 
   try {
-    if (typeof provider.request === 'function') {
-      const balance = await provider.request<string>({ 
-        method: 'eth_getBalance',
-        params: [address, 'latest'] 
-      });
-      
-      // Parse hex balance if returned
-      const balanceValue = balance ? 
-        (typeof balance === 'string' && balance.startsWith('0x') ? 
-          parseInt(balance, 16).toString() : 
-          balance.toString()) : 
-        '0';
-      
-      return {
-        available: balanceValue,
-        locked: '0',
-      };
-    }
+    const balance = await rpcRequest<string>(provider, 'eth_getBalance', [address, 'latest']);
+
+    // Parse hex (avoid precision loss with BigInt)
+    const balanceValue = balance
+      ? typeof balance === 'string' && balance.startsWith('0x')
+        ? BigInt(balance).toString()
+        : balance.toString()
+      : '0';
+
+    return {
+      available: balanceValue,
+      locked: '0',
+    };
   } catch (error) {
     console.error('Failed to get balance from CheCko wallet:', error);
   }
@@ -286,10 +270,7 @@ export async function executeLineraGraphQLMutation(
   }
 
   try {
-    const result = await provider.request({
-      method: 'linera_graphqlMutation',
-      params: [{ query: mutation, variables }],
-    });
+    const result = await rpcRequest(provider, 'linera_graphqlMutation', [{ query: mutation, variables }]);
     return result;
   } catch (error) {
     console.error('GraphQL mutation failed:', error);
@@ -311,10 +292,7 @@ export async function executeLineraGraphQLQuery(
   }
 
   try {
-    const result = await provider.request({
-      method: 'linera_graphqlQuery',
-      params: [{ query, variables }],
-    });
+    const result = await rpcRequest(provider, 'linera_graphqlQuery', [{ query, variables }]);
     return result;
   } catch (error) {
     console.error('GraphQL query failed:', error);
@@ -333,7 +311,7 @@ export async function pingCheCko(): Promise<boolean> {
   }
 
   try {
-    await provider.request({ method: 'checko_ping' });
+    await rpcRequest(provider, 'checko_ping', []);
     return true;
   } catch {
     return false;
