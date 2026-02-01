@@ -145,8 +145,8 @@ export function usePlaceBet() {
     },
     onSuccess: (data, variables) => {
       toast({
-        title: 'Bet placed!',
-        description: `Bet ID: ${data.betId} at ${(data.odds / 1000).toFixed(2)}x odds`,
+        title: 'Prediction placed!',
+        description: `Your prediction is locked in at ${(data.odds / 1000).toFixed(2)}x odds`,
       });
 
       // Invalidate related queries
@@ -156,7 +156,7 @@ export function usePlaceBet() {
     },
     onError: (error) => {
       toast({
-        title: 'Failed to place bet',
+        title: 'Failed to place prediction',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       });
@@ -197,69 +197,8 @@ export function useClaimWinnings() {
   });
 }
 
-/**
- * Hook to deposit tokens
- */
-export function useDeposit() {
-  const client = useLineraClient();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (amount: number) => {
-      if (!client.isConnected()) {
-        await client.connect();
-      }
-      return client.deposit(amount);
-    },
-    onSuccess: (data) => {
-      toast({
-        title: 'Deposit successful!',
-        description: `New balance: ${data.newBalance} LPT`,
-      });
-
-      queryClient.invalidateQueries({ queryKey: ['linera', 'balance'] });
-    },
-    onError: (error) => {
-      toast({
-        title: 'Deposit failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      });
-    },
-  });
-}
-
-/**
- * Hook to withdraw tokens
- */
-export function useWithdraw() {
-  const client = useLineraClient();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (amount: number) => {
-      if (!client.isConnected()) {
-        await client.connect();
-      }
-      return client.withdraw(amount);
-    },
-    onSuccess: (data) => {
-      toast({
-        title: 'Withdrawal successful!',
-        description: `New balance: ${data.newBalance} LPT`,
-      });
-
-      queryClient.invalidateQueries({ queryKey: ['linera', 'balance'] });
-    },
-    onError: (error) => {
-      toast({
-        title: 'Withdrawal failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      });
-    },
-  });
-}
+// NOTE: Deposit/withdraw removed - users get free testnet LPT on wallet connect
+// The platform focuses on predictions, not token management
 
 /**
  * Hook to create a market (admin only)

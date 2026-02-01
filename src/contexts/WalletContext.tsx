@@ -24,6 +24,9 @@ interface WalletContextType {
   setShowInstallGuide: (show: boolean) => void;
 }
 
+// Default balance - users get 1000 free testnet LPT on connect
+const INITIAL_LPT_BALANCE = 1000;
+
 const initialBalance: UserBalance = {
   available: 0,
   locked: 0,
@@ -47,29 +50,38 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [showInstallGuide, setShowInstallGuide] = useState(false);
 
   const updateWalletState = useCallback(async (address: string, chainId: string) => {
+    // For testnet: users get 1000 LPT automatically when connecting
+    // In production, this would query the on-chain balance
     try {
       const balanceData = await getCheCkoBalance(address);
       const available = parseFloat(balanceData?.available || '0');
       const locked = parseFloat(balanceData?.locked || '0');
+      
+      // Use testnet LPT balance (give users 1000 if no balance found)
+      const lptBalance = available > 0 ? available : INITIAL_LPT_BALANCE;
       
       setWallet({
         connected: true,
         address,
         chainId,
         balance: {
-          available,
+          available: lptBalance,
           locked,
-          total: available + locked,
+          total: lptBalance + locked,
         },
       });
     } catch (err) {
-      console.error('Failed to fetch balance:', err);
-      // If balance fetch fails, still connect with 0 balance
+      console.error('Failed to fetch balance, using default testnet balance:', err);
+      // Give users default testnet LPT balance on connect
       setWallet({
         connected: true,
         address,
         chainId,
-        balance: initialBalance,
+        balance: {
+          available: INITIAL_LPT_BALANCE,
+          locked: 0,
+          total: INITIAL_LPT_BALANCE,
+        },
       });
     }
   }, []);

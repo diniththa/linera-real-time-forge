@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Zap, Menu, X, Download, ArrowDownLeft, ArrowUpRight, Wallet, LogOut } from 'lucide-react';
+import { Zap, Menu, X, Download, Wallet, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useWallet } from '@/contexts/WalletContext';
 import { CheCkoInstallModal } from '@/components/wallet/CheCkoInstallModal';
-import { DepositModal } from '@/components/wallet/DepositModal';
 import { cn } from '@/lib/utils';
 
 const navLinks = [
@@ -25,7 +24,6 @@ export function Header() {
   const { wallet, connect, disconnect, isConnecting, isCheCkoAvailable, showInstallGuide, setShowInstallGuide, error } = useWallet();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showDepositModal, setShowDepositModal] = useState(false);
 
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -77,23 +75,12 @@ export function Header() {
           <div className="flex items-center gap-4">
             {wallet.connected ? (
               <div className="hidden sm:flex items-center gap-2">
-                {/* Deposit Button - Prominent */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDepositModal(true)}
-                  className="font-body font-semibold border-primary/50 hover:border-primary hover:bg-primary/10 text-primary"
-                >
-                  <ArrowDownLeft className="mr-1.5 h-4 w-4" />
-                  Deposit
-                </Button>
-
-                {/* Balance Badge */}
+                {/* Balance Badge - Links to predictions */}
                 <Link 
-                  to="/wallet"
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted border border-border hover:border-primary/50 transition-colors"
+                  to="/matches"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 hover:border-primary/50 transition-colors"
                 >
-                  <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                  <Zap className="h-4 w-4 text-primary" />
                   <span className="font-body text-sm font-semibold text-primary">
                     {wallet.balance.available.toLocaleString()} LPT
                   </span>
@@ -187,14 +174,14 @@ export function Header() {
                 <div className="grid grid-cols-2 gap-2">
                   <Button 
                     size="sm" 
-                    onClick={() => {
-                      setShowDepositModal(true);
-                      setMobileMenuOpen(false);
-                    }}
+                    asChild
                     className="bg-primary text-primary-foreground"
+                    onClick={() => setMobileMenuOpen(false)}
                   >
-                    <ArrowDownLeft className="mr-1 h-4 w-4" />
-                    Deposit
+                    <Link to="/matches">
+                      <Zap className="mr-1 h-4 w-4" />
+                      Predict
+                    </Link>
                   </Button>
                   <Button 
                     variant="outline" 
@@ -242,7 +229,6 @@ export function Header() {
 
       {/* Modals */}
       <CheCkoInstallModal open={showInstallGuide} onOpenChange={setShowInstallGuide} />
-      <DepositModal open={showDepositModal} onOpenChange={setShowDepositModal} />
     </header>
   );
 }
