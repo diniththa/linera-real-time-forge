@@ -251,39 +251,102 @@ function weiToTokens(weiValue: string | bigint): string {
 
 /**
  * Get balance from CheCko wallet
+ * Tries multiple RPC methods for compatibility
  */
 export async function getCheCkoBalance(address: string): Promise<CheCkoBalance | null> {
   const provider = getCheCkoProvider();
   
   if (!provider) {
+    console.warn('[CheCko] No provider available');
     return null;
   }
 
-  try {
-    const balance = await rpcRequest<string>(provider, 'eth_getBalance', [address, 'latest']);
+  // Try different RPC methods for balance
+  const methods = [
+    { method: 'linera_getBalance', params: [address] },
+    { method: 'eth_getBalance', params: [address, 'latest'] },
+    { method: 'wallet_getBalance', params: [address] },
+  ];
 
-    // Parse hex balance
-    let weiBalance = 0n;
-    if (balance) {
-      if (typeof balance === 'string' && balance.startsWith('0x')) {
-        weiBalance = BigInt(balance);
-      } else {
-        weiBalance = BigInt(balance.toString());
+  for (const { method, params } of methods) {
+    try {
+      console.log(`[CheCko] Trying ${method}...`);
+      const balance = await rpcRequest<string | number | { available?: string; balance?: string }>(
+        provider, 
+        method, 
+        params
+      );
+      
+      console.log(`[CheCko] ${method} returned:`, balance);
+
+      if (balance !== null && balance !== undefined) {
+        // Handle object response (e.g., { available: "20", locked: "0" })
+        if (typeof balance === 'object' && balance !== null) {
+          const available = (balance as { available?: string; balance?: string }).available 
+            || (balance as { available?: string; balance?: string }).balance 
+            || '0';
+          return {
+            available: available.toString(),
+            locked: '0',
+          };
+        }
+        
+        // Handle hex string (wei format)
+        if (typeof balance === 'string' && balance.startsWith('0x')) {
+          const weiBalance = BigInt(balance);
+          const tokenBalance = weiToTokens(weiBalance);
+          console.log(`[CheCko] Parsed balance: ${tokenBalance} (from wei: ${weiBalance})`);
+          return {
+            available: tokenBalance,
+            locked: '0',
+          };
+        }
+        
+        // Handle plain number or string
+        const numBalance = typeof balance === 'number' ? balance : parseFloat(balance.toString());
+        if (!isNaN(numBalance)) {
+          console.log(`[CheCko] Parsed balance: ${numBalance}`);
+          return {
+            available: numBalance.toString(),
+            locked: '0',
+          };
+        }
+      }
+    } catch (error) {
+      console.log(`[CheCko] ${method} failed:`, error);
+      // Continue to next method
+    }
+  }
+
+  // Last resort: Try to get balance from accounts response
+  try {
+    console.log('[CheCko] Trying to get balance from account info...');
+    const accountInfo = await rpcRequest<{ balance?: string; amount?: string }[]>(
+      provider,
+      'eth_accounts',
+      []
+    );
+    console.log('[CheCko] Account info:', accountInfo);
+    
+    // Some wallets include balance in account info
+    if (accountInfo && Array.isArray(accountInfo) && accountInfo[0]) {
+      const first = accountInfo[0] as { balance?: string };
+      if (first.balance) {
+        return {
+          available: first.balance,
+          locked: '0',
+        };
       }
     }
-
-    // Convert wei to tokens (18 decimals)
-    const tokenBalance = weiToTokens(weiBalance);
-
-    return {
-      available: tokenBalance,
-      locked: '0',
-    };
   } catch (error) {
-    console.error('Failed to get balance from CheCko wallet:', error);
+    console.log('[CheCko] Account info failed:', error);
   }
-  
-  return null;
+
+  console.warn('[CheCko] All balance methods failed, returning 0');
+  return {
+    available: '0',
+    locked: '0',
+  };
 }
 
 /**
