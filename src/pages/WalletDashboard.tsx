@@ -1,23 +1,21 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Wallet, ArrowUpRight, ArrowDownLeft, History, TrendingUp, Target, Trophy, Download, ExternalLink } from 'lucide-react';
+import { Wallet, History, TrendingUp, Target, Trophy, Download, ExternalLink, Zap, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/contexts/WalletContext';
 import { CheCkoInstallModal } from '@/components/wallet/CheCkoInstallModal';
-import { DepositModal } from '@/components/wallet/DepositModal';
 import { cn } from '@/lib/utils';
 
 export default function WalletDashboard() {
   const { wallet, connect, isConnecting, isCheCkoAvailable, showInstallGuide, setShowInstallGuide, error } = useWallet();
-  const [showDepositModal, setShowDepositModal] = useState(false);
-  // Mock transaction history
+  
+  // Mock transaction history (predictions only - no deposits)
   const transactions = [
     { id: '1', type: 'win', amount: 85, description: 'Won: NAVI Round 22 Winner', time: '2 min ago' },
-    { id: '2', type: 'bet', amount: -50, description: 'Bet: FaZe First Blood', time: '5 min ago' },
-    { id: '3', type: 'bet', amount: -25, description: 'Bet: Over 6.5 Kills', time: '8 min ago' },
+    { id: '2', type: 'bet', amount: -50, description: 'Predicted: FaZe First Blood', time: '5 min ago' },
+    { id: '3', type: 'bet', amount: -25, description: 'Predicted: Over 6.5 Kills', time: '8 min ago' },
     { id: '4', type: 'win', amount: 120, description: 'Won: Bomb Plant Yes', time: '15 min ago' },
-    { id: '5', type: 'bet', amount: -100, description: 'Bet: G2 Map Winner', time: '1 hour ago' },
-    { id: '6', type: 'deposit', amount: 500, description: 'Deposited from wallet', time: '2 hours ago' },
+    { id: '5', type: 'bet', amount: -100, description: 'Predicted: G2 Map Winner', time: '1 hour ago' },
+    { id: '6', type: 'bonus', amount: 1000, description: 'Welcome bonus - Free testnet LPT!', time: 'On signup' },
   ];
 
   // Mock stats
@@ -152,29 +150,26 @@ export default function WalletDashboard() {
           </div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="flex gap-4 mb-8">
-          <Button 
-            className="flex-1 font-body font-semibold bg-primary text-primary-foreground hover:bg-primary/90" 
-            onClick={() => setShowDepositModal(true)}
-          >
-            <ArrowDownLeft className="mr-2 h-4 w-4" />
-            Deposit TLINERA
-          </Button>
-          <Button className="flex-1 font-body font-semibold" variant="outline">
-            <ArrowUpRight className="mr-2 h-4 w-4" />
-            Withdraw
-          </Button>
-          <Button asChild className="flex-1 font-body font-semibold" variant="outline">
-            <Link to="/matches">
-              <Trophy className="mr-2 h-4 w-4" />
-              Start Betting
-            </Link>
-          </Button>
+        {/* Testnet Info Banner */}
+        <div className="mb-8 p-4 rounded-xl border border-secondary/30 bg-secondary/5">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-secondary/20 flex items-center justify-center">
+              <Gift className="h-5 w-5 text-secondary" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-sm">Free Testnet LPT</p>
+              <p className="text-xs text-muted-foreground">
+                You received 1000 LPT when you connected. Use them to make predictions on live esports matches!
+              </p>
+            </div>
+            <Button asChild className="font-body font-semibold bg-primary text-primary-foreground hover:bg-primary/90">
+              <Link to="/matches">
+                <Zap className="mr-2 h-4 w-4" />
+                Start Predicting
+              </Link>
+            </Button>
+          </div>
         </div>
-
-        {/* Deposit Modal */}
-        <DepositModal open={showDepositModal} onOpenChange={setShowDepositModal} />
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Stats */}
@@ -232,12 +227,12 @@ export default function WalletDashboard() {
                       <div className={cn(
                         'h-10 w-10 rounded-lg flex items-center justify-center',
                         tx.type === 'win' ? 'bg-success/10' :
-                        tx.type === 'deposit' ? 'bg-primary/10' : 'bg-muted'
+                        tx.type === 'bonus' ? 'bg-secondary/10' : 'bg-muted'
                       )}>
                         {tx.type === 'win' ? (
                           <TrendingUp className="h-5 w-5 text-success" />
-                        ) : tx.type === 'deposit' ? (
-                          <ArrowDownLeft className="h-5 w-5 text-primary" />
+                        ) : tx.type === 'bonus' ? (
+                          <Gift className="h-5 w-5 text-secondary" />
                         ) : (
                           <Target className="h-5 w-5 text-muted-foreground" />
                         )}
