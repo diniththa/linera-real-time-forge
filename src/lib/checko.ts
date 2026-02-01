@@ -285,12 +285,12 @@ function parseCheCkoBalancesResponse(balances: CheCkoBalanceResponse): number {
 }
 
 /**
- * Get balance from CheCko wallet using linera_graphqlQuery.
+ * Get balance from CheCko wallet.
  * 
- * CheCko wallet internally uses a GraphQL query to fetch balances:
- * query { balances(chainIds: [...], publicKeys: [...]) }
+ * CheCko wallet's eth_getBalance internally uses a GraphQL query to fetch balances
+ * and returns a plain number (not hex wei) representing the total balance.
  * 
- * The eth_getBalance method in CheCko returns the total as a plain number.
+ * Based on linera-wallet source: src-bex/middleware/rpcimpl/ethgetbalance.ts
  */
 export async function getCheCkoBalance(address: string): Promise<CheCkoBalance | null> {
   const provider = getCheCkoProvider();
@@ -300,23 +300,22 @@ export async function getCheCkoBalance(address: string): Promise<CheCkoBalance |
     return null;
   }
 
-  // Method 1: Try eth_getBalance which CheCko implements internally
-  // CheCko returns a plain number (not hex wei) - this is the total balance
+  // Method 1: Try eth_getBalance - CheCko returns a plain number (total balance)
+  // This is the preferred method as CheCko handles all the internal complexity
   try {
-    console.log('[CheCko] Trying eth_getBalance...');
+    console.log('[CheCko] Calling eth_getBalance for address:', address);
     const balance = await rpcRequest<number | string>(
       provider, 
       'eth_getBalance', 
       [address, 'latest']
     );
     
-    console.log('[CheCko] eth_getBalance returned:', balance, typeof balance);
+    console.log('[CheCko] eth_getBalance raw response:', balance, typeof balance);
     
-    // CheCko returns a plain number, not hex
     if (balance !== null && balance !== undefined) {
-      // Handle plain number response (most common from CheCko)
+      // CheCko returns a plain number (float), not hex
       if (typeof balance === 'number') {
-        console.log(`[CheCko] Balance: ${balance}`);
+        console.log(`[CheCko] Balance (number): ${balance}`);
         return {
           available: balance.toString(),
           locked: '0',
@@ -324,10 +323,23 @@ export async function getCheCkoBalance(address: string): Promise<CheCkoBalance |
       }
       
       // Handle string that's a plain number (not hex)
-      if (typeof balance === 'string' && !balance.startsWith('0x')) {
+      if (typeof balance === 'string') {
+        // Check if it's hex (starts with 0x)
+        if (balance.startsWith('0x')) {
+          // Convert from wei to tokens (18 decimals)
+          const weiBalance = BigInt(balance);
+          const tokenBalance = weiToTokens(weiBalance);
+          console.log(`[CheCko] Balance from hex: ${tokenBalance}`);
+          return {
+            available: tokenBalance,
+            locked: '0',
+          };
+        }
+        
+        // Plain number string
         const numBalance = parseFloat(balance);
         if (!isNaN(numBalance)) {
-          console.log(`[CheCko] Balance from string: ${numBalance}`);
+          console.log(`[CheCko] Balance (string): ${numBalance}`);
           return {
             available: numBalance.toString(),
             locked: '0',
@@ -335,56 +347,62 @@ export async function getCheCkoBalance(address: string): Promise<CheCkoBalance |
         }
       }
       
-      // Handle hex string (wei format) - fallback for other providers
-      if (typeof balance === 'string' && balance.startsWith('0x')) {
-        const weiBalance = BigInt(balance);
-        const tokenBalance = weiToTokens(weiBalance);
-        console.log(`[CheCko] Parsed balance from hex: ${tokenBalance}`);
-        return {
-          available: tokenBalance,
-          locked: '0',
-        };
+      // Handle object response (rare, but possible)
+      if (typeof balance === 'object') {
+        const balanceObj = balance as Record<string, unknown>;
+        // Check for balances property (GraphQL response structure)
+        if (balanceObj.balances) {
+          const total = parseCheCkoBalancesResponse(balanceObj.balances as CheCkoBalanceResponse);
+          console.log(`[CheCko] Balance from balances object: ${total}`);
+          return {
+            available: total.toString(),
+            locked: '0',
+          };
+        }
       }
     }
   } catch (error) {
     console.log('[CheCko] eth_getBalance failed:', error);
   }
 
-  // Method 2: Try direct linera_graphqlQuery for balances
-  // This is the underlying method that eth_getBalance uses internally
+  // Method 2: Try linera_graphqlQuery directly to get balances
+  // This matches how CheCko internally fetches balances
   try {
     console.log('[CheCko] Trying linera_graphqlQuery for balances...');
     
-    // Get chain ID for the query
+    // Get the current chain ID
     let chainId: string | null = null;
     try {
       chainId = await rpcRequest<string>(provider, 'eth_chainId', []);
-      console.log('[CheCko] Chain ID:', chainId);
-    } catch {
-      console.log('[CheCko] Could not get chain ID');
+      console.log('[CheCko] Current chainId:', chainId);
+    } catch (e) {
+      console.log('[CheCko] Could not get chainId:', e);
     }
-    
-    // The balances query requires chainIds and publicKeys
-    const query = `query getChainAccountBalances($chainIds: [String!]!, $publicKeys: [String!]!) {
-      balances(chainIds: $chainIds, publicKeys: $publicKeys)
-    }`;
-    
-    // Use the address as the public key and chain ID if available
-    const chainIds = chainId ? [chainId] : [];
-    const publicKeys = [address];
-    
-    if (chainIds.length > 0) {
-      const result = await rpcRequest<{ balances: CheCkoBalanceResponse }>(
+
+    if (chainId) {
+      // Format the address - CheCko uses addresses without 0x prefix in some cases
+      const publicKey = address.startsWith('0x') ? address.substring(2) : address;
+      
+      const query = `query getChainAccountBalances($chainIds: [String!]!, $publicKeys: [String!]!) {
+        balances(chainIds: $chainIds, publicKeys: $publicKeys)
+      }`;
+      
+      const result = await rpcRequest<{ balances?: CheCkoBalanceResponse }>(
         provider,
         'linera_graphqlQuery',
         [{
-          query,
-          variables: { chainIds, publicKeys },
-          operationName: 'getChainAccountBalances'
+          query: {
+            query: query,
+            variables: { 
+              chainIds: [chainId], 
+              publicKeys: [publicKey] 
+            },
+            operationName: 'getChainAccountBalances'
+          }
         }]
       );
       
-      console.log('[CheCko] GraphQL balances result:', result);
+      console.log('[CheCko] linera_graphqlQuery result:', result);
       
       if (result?.balances) {
         const total = parseCheCkoBalancesResponse(result.balances);
