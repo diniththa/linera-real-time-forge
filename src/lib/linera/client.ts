@@ -49,12 +49,7 @@ export class LineraClient {
         throw new Error('CheCko wallet not found. Please install the CheCko extension.');
       }
 
-      // Verify this is actually CheCko, not MetaMask
-      if ((this.provider as any).isMetaMask && !(this.provider as any).isCheCko) {
-        console.error('[LineraClient] Provider is MetaMask, not CheCko');
-        this.provider = null;
-        throw new Error('Wrong wallet detected. Please use CheCko wallet, not MetaMask.');
-      }
+      console.log('[LineraClient] Found provider, connecting...');
 
       console.log('[LineraClient] Connecting via CheCko...');
 
