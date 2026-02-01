@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Users, TrendingUp, ExternalLink, Loader2, Trophy } from 'lucide-react';
+import { ArrowLeft, Users, TrendingUp, ExternalLink, Loader2, Trophy, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BettingCard } from '@/components/betting/BettingCard';
 import { LiveIndicator } from '@/components/common/LiveIndicator';
@@ -223,23 +223,17 @@ export default function LiveMatch() {
           )}
         </div>
 
-        {/* Recent Activity (placeholder) */}
+        {/* Recent Activity - shows real on-chain activity when available */}
         <div className="bg-card border border-border rounded-xl p-6">
           <h3 className="font-display text-lg font-bold mb-4">Recent Activity</h3>
-          <div className="space-y-3">
-            {[
-              { user: '0x1a2b...', action: `bet 50 LPT on ${match.teamA.shortName} to win round`, time: '2s ago' },
-              { user: '0x3c4d...', action: `bet 25 LPT on First Blood: ${match.teamB.shortName}`, time: '8s ago' },
-              { user: '0x5e6f...', action: 'won 85 LPT on Round prediction', time: '45s ago' },
-            ].map((activity, i) => (
-              <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-border last:border-0">
-                <div>
-                  <span className="text-primary font-mono">{activity.user}</span>
-                  <span className="text-muted-foreground"> {activity.action}</span>
-                </div>
-                <span className="text-xs text-muted-foreground">{activity.time}</span>
-              </div>
-            ))}
+          <div className="text-center py-8">
+            <History className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">
+              Live activity feed coming soon
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              On-chain predictions will appear here in real-time
+            </p>
           </div>
         </div>
       </div>
