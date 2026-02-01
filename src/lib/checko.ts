@@ -108,51 +108,83 @@ declare global {
   }
 }
 
-function pickCheCkoFromEthereum(ethereum: CheCkoProvider | undefined): CheCkoProvider | null {
-  if (!ethereum) return null;
-
-  // Some extensions inject multiple providers under window.ethereum.providers.
-  if (Array.isArray(ethereum.providers) && ethereum.providers.length > 0) {
-    return (
-      ethereum.providers.find((p) => p?.isCheCko || p?.isLineraWallet) ??
-      null
-    );
-  }
-
-  if (ethereum.isCheCko || ethereum.isLineraWallet) return ethereum;
-  return null;
+/**
+ * Verify a provider is actually CheCko/Linera by checking for Linera-specific methods
+ */
+function isValidLineraProvider(provider: CheCkoProvider | undefined): boolean {
+  if (!provider) return false;
+  
+  // Check for CheCko/Linera identification flags
+  if (provider.isCheCko || provider.isLineraWallet) return true;
+  
+  // Additional check: CheCko providers should NOT have isMetaMask flag
+  if ((provider as any).isMetaMask) return false;
+  
+  return false;
 }
 
 /**
  * Check if CheCko wallet is installed
+ * IMPORTANT: Only returns true for actual CheCko/Linera wallets, NOT MetaMask
  */
 export function isCheCkoInstalled(): boolean {
   if (typeof window === 'undefined') return false;
   
-  // Check for CheCko-specific providers
-  const provider = window.checko || window.linera;
-  if (provider) return true;
+  // Check for CheCko-specific providers ONLY
+  if (window.linera && isValidLineraProvider(window.linera)) return true;
+  if (window.checko && isValidLineraProvider(window.checko)) return true;
 
-  // Check if ethereum provider (or one of its sub-providers) is CheCko
-  if (pickCheCkoFromEthereum(window.ethereum) != null) return true;
+  // Check ethereum.providers array for CheCko
+  if (window.ethereum?.providers && Array.isArray(window.ethereum.providers)) {
+    const checkoProvider = window.ethereum.providers.find(
+      (p) => p && isValidLineraProvider(p)
+    );
+    if (checkoProvider) return true;
+  }
+  
+  // Only use window.ethereum if it's explicitly CheCko (not MetaMask)
+  if (window.ethereum && isValidLineraProvider(window.ethereum)) return true;
   
   return false;
 }
 
 /**
  * Get the CheCko provider instance
+ * CRITICAL: Never return MetaMask provider - only return actual CheCko/Linera wallets
  */
 export function getCheCkoProvider(): CheCkoProvider | null {
   if (typeof window === 'undefined') return null;
   
-  // Prefer CheCko-specific providers
-  if (window.checko) return window.checko;
-  if (window.linera) return window.linera;
-
-  // Fall back to ethereum if it's CheCko (or one of its providers)
-  const picked = pickCheCkoFromEthereum(window.ethereum);
-  if (picked) return picked;
+  // Priority 1: window.linera (dedicated Linera provider)
+  if (window.linera && isValidLineraProvider(window.linera)) {
+    console.log('[CheCko] Using window.linera provider');
+    return window.linera;
+  }
   
+  // Priority 2: window.checko
+  if (window.checko && isValidLineraProvider(window.checko)) {
+    console.log('[CheCko] Using window.checko provider');
+    return window.checko;
+  }
+
+  // Priority 3: Check ethereum.providers array
+  if (window.ethereum?.providers && Array.isArray(window.ethereum.providers)) {
+    const checkoProvider = window.ethereum.providers.find(
+      (p) => p && isValidLineraProvider(p)
+    );
+    if (checkoProvider) {
+      console.log('[CheCko] Using CheCko from ethereum.providers');
+      return checkoProvider;
+    }
+  }
+  
+  // Priority 4: Only use window.ethereum if it's explicitly CheCko
+  if (window.ethereum && isValidLineraProvider(window.ethereum)) {
+    console.log('[CheCko] Using window.ethereum (verified as CheCko)');
+    return window.ethereum;
+  }
+  
+  console.warn('[CheCko] No valid CheCko/Linera provider found. MetaMask was ignored.');
   return null;
 }
 

@@ -45,14 +45,25 @@ export class LineraClient {
     try {
       this.provider = getCheCkoProvider();
       if (!this.provider) {
-        throw new Error('CheCko wallet not found');
+        console.error('[LineraClient] CheCko wallet not found - make sure the extension is installed');
+        throw new Error('CheCko wallet not found. Please install the CheCko extension.');
       }
 
-      // CheCko uses EIP-1193 request pattern, not direct methods
+      // Verify this is actually CheCko, not MetaMask
+      if ((this.provider as any).isMetaMask && !(this.provider as any).isCheCko) {
+        console.error('[LineraClient] Provider is MetaMask, not CheCko');
+        this.provider = null;
+        throw new Error('Wrong wallet detected. Please use CheCko wallet, not MetaMask.');
+      }
+
+      console.log('[LineraClient] Connecting via CheCko...');
+
+      // CheCko uses EIP-1193 request pattern
       let accounts: string[] = [];
       try {
         accounts = await this.provider.request<string[]>({ method: 'eth_accounts' });
-      } catch {
+      } catch (err) {
+        console.log('[LineraClient] eth_accounts failed, trying eth_requestAccounts:', err);
         accounts = [];
       }
 
@@ -62,9 +73,10 @@ export class LineraClient {
       }
 
       this.connected = accounts && accounts.length > 0;
+      console.log('[LineraClient] Connected:', this.connected, 'Account:', accounts?.[0]);
       return this.connected;
     } catch (error) {
-      console.error('Failed to connect to Linera:', error);
+      console.error('[LineraClient] Failed to connect:', error);
       this.connected = false;
       return false;
     }
