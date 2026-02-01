@@ -226,6 +226,30 @@ export async function getCheCkoAccounts(): Promise<string[]> {
 }
 
 /**
+ * Convert wei (10^18) to human-readable token amount.
+ * Linera/TLINERA uses 18 decimals like Ethereum.
+ */
+function weiToTokens(weiValue: string | bigint): string {
+  const wei = typeof weiValue === 'string' ? BigInt(weiValue) : weiValue;
+  const decimals = 18n;
+  const divisor = 10n ** decimals;
+  
+  // Integer division for whole tokens
+  const whole = wei / divisor;
+  // Remainder for fractional part (keep 4 decimals for display)
+  const remainder = wei % divisor;
+  const fractional = (remainder * 10000n) / divisor;
+  
+  if (fractional === 0n) {
+    return whole.toString();
+  }
+  
+  // Format with up to 4 decimal places, trimming trailing zeros
+  const fracStr = fractional.toString().padStart(4, '0').replace(/0+$/, '');
+  return fracStr ? `${whole}.${fracStr}` : whole.toString();
+}
+
+/**
  * Get balance from CheCko wallet
  */
 export async function getCheCkoBalance(address: string): Promise<CheCkoBalance | null> {
@@ -238,15 +262,21 @@ export async function getCheCkoBalance(address: string): Promise<CheCkoBalance |
   try {
     const balance = await rpcRequest<string>(provider, 'eth_getBalance', [address, 'latest']);
 
-    // Parse hex (avoid precision loss with BigInt)
-    const balanceValue = balance
-      ? typeof balance === 'string' && balance.startsWith('0x')
-        ? BigInt(balance).toString()
-        : balance.toString()
-      : '0';
+    // Parse hex balance
+    let weiBalance = 0n;
+    if (balance) {
+      if (typeof balance === 'string' && balance.startsWith('0x')) {
+        weiBalance = BigInt(balance);
+      } else {
+        weiBalance = BigInt(balance.toString());
+      }
+    }
+
+    // Convert wei to tokens (18 decimals)
+    const tokenBalance = weiToTokens(weiBalance);
 
     return {
-      available: balanceValue,
+      available: tokenBalance,
       locked: '0',
     };
   } catch (error) {
