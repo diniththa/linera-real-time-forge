@@ -48,14 +48,21 @@ export class LineraClient {
         throw new Error('CheCko wallet not found');
       }
 
-      const accounts = await this.provider.getAccounts();
-      if (accounts.length === 0) {
-        // Request connection
-        await this.provider.connect();
+      // CheCko uses EIP-1193 request pattern, not direct methods
+      let accounts: string[] = [];
+      try {
+        accounts = await this.provider.request<string[]>({ method: 'eth_accounts' });
+      } catch {
+        accounts = [];
       }
 
-      this.connected = true;
-      return true;
+      if (!accounts || accounts.length === 0) {
+        // Request connection via EIP-1193
+        accounts = await this.provider.request<string[]>({ method: 'eth_requestAccounts' });
+      }
+
+      this.connected = accounts && accounts.length > 0;
+      return this.connected;
     } catch (error) {
       console.error('Failed to connect to Linera:', error);
       this.connected = false;
@@ -71,12 +78,28 @@ export class LineraClient {
   }
 
   /**
+   * Ensure connection before operations
+   */
+  async ensureConnected(): Promise<void> {
+    if (!this.isConnected()) {
+      const success = await this.connect();
+      if (!success) {
+        throw new Error('Not connected to Linera');
+      }
+    }
+  }
+
+  /**
    * Get current user's address
    */
   async getAddress(): Promise<string | null> {
     if (!this.provider) return null;
-    const accounts = await this.provider.getAccounts();
-    return accounts[0]?.address || null;
+    try {
+      const accounts = await this.provider.request<string[]>({ method: 'eth_accounts' });
+      return accounts?.[0] || null;
+    } catch {
+      return null;
+    }
   }
 
   // ============================================
@@ -378,40 +401,105 @@ export class LineraClient {
   // ============================================
 
   /**
-   * Execute a contract operation via wallet
+   * Execute a contract operation via wallet using EIP-1193 request pattern
+   * CheCko uses linera_graphqlMutation for write operations
    */
   private async executeOperation(operation: Record<string, unknown>): Promise<TransactionReceipt> {
-    if (!this.provider || !this.connected) {
+    await this.ensureConnected();
+
+    if (!this.provider) {
       throw new Error('Not connected to Linera');
     }
 
     try {
-      // Check if provider supports signAndSubmit
-      if (!this.provider.signAndSubmit) {
-        // Fallback to sign + send for older wallet versions
-        const signedTx = await this.provider.signTransaction({
-          chainId: this.config.chainId,
-          applicationId: this.config.applicationId,
-          operation,
-        });
-        const hash = await this.provider.sendTransaction(signedTx);
-        const receipt = await this.waitForTransaction(hash);
-        return receipt;
+      // Get current user's public key for the mutation
+      const accounts = await this.provider.request<string[]>({ method: 'eth_accounts' });
+      const publicKey = accounts?.[0];
+      
+      if (!publicKey) {
+        throw new Error('No account available');
       }
 
-      // Sign and submit transaction via CheCko
-      const tx = await this.provider.signAndSubmit({
-        chainId: this.config.chainId,
-        applicationId: this.config.applicationId,
-        operation,
+      // Build GraphQL mutation for the operation
+      const { mutation, variables } = this.buildOperationMutation(operation);
+
+      // Execute via CheCko's linera_graphqlMutation RPC method
+      const hash = await this.provider.request<string>({
+        method: 'linera_graphqlMutation',
+        params: {
+          applicationId: this.config.applicationId,
+          publicKey,
+          query: {
+            query: mutation,
+            variables,
+          },
+        },
       });
 
       // Wait for confirmation
-      const receipt = await this.waitForTransaction(tx.hash);
+      const receipt = await this.waitForTransaction(hash);
       return receipt;
     } catch (error) {
       console.error('Operation failed:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Build GraphQL mutation from operation object
+   */
+  private buildOperationMutation(operation: Record<string, unknown>): { mutation: string; variables: Record<string, unknown> } {
+    const opType = operation.type as string;
+    
+    switch (opType) {
+      case 'Deposit':
+        return {
+          mutation: `mutation deposit($amount: String!) { deposit(amount: $amount) }`,
+          variables: { amount: operation.amount },
+        };
+      case 'Withdraw':
+        return {
+          mutation: `mutation withdraw($amount: String!) { withdraw(amount: $amount) }`,
+          variables: { amount: operation.amount },
+        };
+      case 'PlaceBet':
+        return {
+          mutation: `mutation placeBet($marketId: ID!, $optionId: Int!, $amount: String!) { placeBet(marketId: $marketId, optionId: $optionId, amount: $amount) }`,
+          variables: { marketId: operation.marketId, optionId: operation.optionId, amount: operation.amount },
+        };
+      case 'ClaimWinnings':
+        return {
+          mutation: `mutation claimWinnings($betId: ID!) { claimWinnings(betId: $betId) }`,
+          variables: { betId: operation.betId },
+        };
+      case 'CreateMarket':
+        return {
+          mutation: `mutation createMarket($matchId: String!, $marketType: String!, $title: String!, $options: [String!]!, $locksAt: Int!) { createMarket(matchId: $matchId, marketType: $marketType, title: $title, options: $options, locksAt: $locksAt) }`,
+          variables: {
+            matchId: operation.matchId,
+            marketType: operation.marketType,
+            title: operation.title,
+            options: operation.options,
+            locksAt: operation.locksAt,
+          },
+        };
+      case 'LockMarket':
+        return {
+          mutation: `mutation lockMarket($marketId: ID!) { lockMarket(marketId: $marketId) }`,
+          variables: { marketId: operation.marketId },
+        };
+      case 'ResolveMarket':
+        return {
+          mutation: `mutation resolveMarket($marketId: ID!, $winningOption: Int!) { resolveMarket(marketId: $marketId, winningOption: $winningOption) }`,
+          variables: { marketId: operation.marketId, winningOption: operation.winningOption },
+        };
+      case 'CancelMarket':
+        return {
+          mutation: `mutation cancelMarket($marketId: ID!) { cancelMarket(marketId: $marketId) }`,
+          variables: { marketId: operation.marketId },
+        };
+      default:
+        throw new Error(`Unknown operation type: ${opType}`);
     }
   }
 
